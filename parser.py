@@ -30,7 +30,7 @@ class Parser:
         self.seen_connections = set()
         self.errors: List[str] = []
 
-    def open_file(self, file: str):
+    def open_file(self, file: str) -> list[str]:
         try:
             with open(file, "r") as f:
                 return f.readlines()
@@ -113,7 +113,8 @@ class Parser:
                             f"Line {i}: max_drones must be a positive integer"
                         )
                 elif k == "zone":
-                    if v not in ("normal", "blocked", "restricted", "priority"):
+                    if v not in ("normal", "blocked",
+                                 "restricted", "priority"):
                         raise ValueError(
                             f"Line {i}: Invalid zone type '{v}'. Must be: "
                             "normal, blocked, restricted, priority"
