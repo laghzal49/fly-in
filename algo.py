@@ -1,32 +1,46 @@
-from sre_compile import dis
+from parser import Parser
+from graph import Graph_network
+from typing import Dict, List
 
-from .parser import Hub, Connection, Parser
-from .graph import Graph_network
 
-class Path_finder():
-    def __init__(self, graph_network: Graph_network, parser:Parser) -> None:
+class Path_finder:
+
+    def __init__(self, graph_network: Graph_network, parser: Parser) -> None:
         self.graph = graph_network
         self.parser = parser
 
-    def get_zone_cost(self, zone_name: str)->int:
-        costs = {"normal": 1, "priority": 1, "restricted": 2, "blocked": 999999999999}
-        zone = self.parser.hubs[zone_name].zone
-        return costs[zone]
+    def find_all_path(self) -> List[List[str]]:
+        """Finds the single shortest physical route from start to end."""
+        start = self.parser.start_hub.name
+        end = self.parser.end_hub.name
 
-    def score_calcule(self):
-            distances = {}
-            for every_hub in self.graph.adj:
-                distances[every_hub] = float('inf')
-            if self.parser.end_hub is None:
-                raise ValueError("Topology Error: No end_hub defined in the map file.")
-            end_node = self.parser.end_hub.name
-            distances[end_node] = 0
-            queue = [end_node]
-            while queue:
-                current_node = queue.pop(0)
-                for neighbor in self.graph.adj[current_node]:
-                    score = distances[current_node] + self.get_zone_cost(neighbor)
-                    if score < distances[neighbor]:
-                        distances[neighbor] = score
-                        queue.append(neighbor)
-                return distances
+        # The queue tracks: [ [path_so_far_list] ]
+        queue: List[List[str]] = [[start]]
+        visited: Set[str] = {start}
+
+        while queue:
+            # Take the first path out of the queue line
+            current_path = queue.pop(0)
+            current_node = current_path[-1]
+
+            # If we reached the goal, wrap it inside a outer list and return it!
+            if current_node == end:
+                return [current_path]
+
+            # Look up adjacent zones from our graph adjacency matrix
+            neighbors = self.graph.adj.get(current_node, [])
+            
+            for neighbor in neighbors:
+                # Rule 1: Skip if we have already visited this zone
+                if neighbor in visited:
+                    continue
+
+                # Rule 2: Skip if the map file lists this zone as explicitly blocked
+                if self.parser.hubs[neighbor].zone == "blocked":
+                    continue
+
+                # Lock the node as visited, extend our path list, and add to the queue line
+                visited.add(neighbor)
+                queue.append(current_path + [neighbor])
+
+        return []  # Return an empty list container if no valid route is found
