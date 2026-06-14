@@ -1,12 +1,11 @@
+"""Read and validate map files."""
+
 import sys
-from dataclasses import dataclass
-from typing import Dict, List, Any, Optional
+from typing import Any, Dict, List, Optional
 
 
 class Hub:
-    """
-    Represents a hub in the network with its properties and location.
-    """
+    """One zone on the map."""
 
     def __init__(
         self,
@@ -17,41 +16,38 @@ class Hub:
         max_drones: int = 1,
         color: str = "none",
     ) -> None:
-        """
-        Initializes a Hub with name, coordinates, and optional properties.
-        """
+        """Create a hub with position and optional metadata."""
         self.name = name
         self.x = x
         self.y = y
         self.zone = zone
         self.max_drones = max_drones
         self.color = color
-        self.priority_weight = {
-            "priority": 1, "normal": 1, "restricted": 2, "blocked": 9999
-        }.get(zone, 1)
 
 
-@dataclass
 class Connection:
-    """
-    Represents a connection between two hubs with a capacity.
-    """
-    from_hub: str
-    to_hub: str
-    max_link_capacity: int = 1
+    """A link between two hubs."""
+
+    def __init__(
+        self,
+        from_hub: str,
+        to_hub: str,
+        max_link_capacity: int = 1,
+    ) -> None:
+        """Create a connection with a default capacity of 1."""
+        self.from_hub = from_hub
+        self.to_hub = to_hub
+        self.max_link_capacity = max_link_capacity
 
 
 class Parser:
-    """
-    Parses map files to extract hubs, connections, and simulation parameters.
-    """
+    """Parse nb_drones, hubs, and connections from a map file."""
+
     VALID_ZONES = ("normal", "blocked", "restricted", "priority")
 
     def __init__(self) -> None:
-        """
-        Initializes the Parser with empty data structures.
-        """
-        self.nb_drones: int = 0
+        """Prepare empty parser state."""
+        self.nb_drones = 0
         self.start_hub: Optional[Hub] = None
         self.end_hub: Optional[Hub] = None
         self.hubs: Dict[str, Hub] = {}
@@ -59,9 +55,7 @@ class Parser:
         self.seen_connections: set[str] = set()
 
     def open_file(self, file: str) -> List[str]:
-        """
-        Opens and reads all lines from a file.
-        """
+        """Read all lines from a map file."""
         try:
             with open(file, "r") as f:
                 return f.readlines()
@@ -71,80 +65,76 @@ class Parser:
             raise Exception(f"Error opening file: {e}")
 
     def parse_nb_drone(self, line: str, i: int) -> None:
-        """
-        Parses the number of drones from a line.
-        """
+        """Read the nb_drones value from one line."""
         try:
             value = line.split(":")[1].strip()
         except IndexError:
-            raise ValueError(
-                f"Line {i}: Missing ':' delimiter or value"
-            )
+            raise ValueError(f"Line {i}: Missing ':' delimiter or value")
+
         if not value:
             raise ValueError(f"Line {i}: nb_drones is empty")
+
         try:
             nb = int(value)
         except ValueError:
-            raise ValueError(
-                f"Line {i}: nb_drones must be an integer"
-            )
+            raise ValueError(f"Line {i}: nb_drones must be an integer")
+
         if nb <= 0:
-            raise ValueError(
-                f"Line {i}: nb_drones must be positive"
-            )
+            raise ValueError(f"Line {i}: nb_drones must be positive")
+
         self.nb_drones = nb
 
     def _parse_metadata(self, attr: str, i: int) -> Dict[str, Any]:
-        """
-        Parse metadata from attribute string.
-        """
-        kwargs: Dict[str, Any] = {
-            "zone": "normal", "color": "none", "max_drones": 1
+        """Parse hub metadata inside [brackets]."""
+        data: Dict[str, Any] = {
+            "zone": "normal",
+            "color": "none",
+            "max_drones": 1,
         }
         if not attr:
-            return kwargs
+            return data
 
-        for element in attr.split():
-            if "=" not in element:
+        for part in attr.split():
+            if "=" not in part:
                 raise ValueError(
-                    f"Line {i}: Invalid metadata token '{element}'"
+                    f"Line {i}: Invalid metadata token '{part}'"
                 )
-            k, v = element.split("=", 1)
 
-            if k == "max_drones":
+            key, val = part.split("=", 1)
+            if key == "max_drones":
                 try:
-                    val = int(v)
-                    if val <= 0:
+                    nb = int(val)
+                    if nb <= 0:
                         raise ValueError()
-                    kwargs[k] = val
+                    data[key] = nb
                 except ValueError:
                     raise ValueError(
                         f"Line {i}: max_drones must be positive"
                     )
-            elif k == "zone":
-                if v not in self.VALID_ZONES:
+            elif key == "zone":
+                if val not in self.VALID_ZONES:
                     raise ValueError(
-                        f"Line {i}: Invalid zone type '{v}'"
+                        f"Line {i}: Invalid zone type '{val}'"
                     )
-                kwargs[k] = v
-            elif k == "color":
-                kwargs[k] = v
+                data[key] = val
+            elif key == "color":
+                data[key] = val
             else:
-                raise ValueError(f"Line {i}: Unknown metadata key '{k}'")
+                raise ValueError(
+                    f"Line {i}: Unknown metadata key '{key}'"
+                )
 
-        return kwargs
+        return data
 
     def hub_parse(self, data: str, i: int) -> Hub:
-        """
-        Parses a hub definition from a data string.
-        """
-        meta_start = data.find("[")
-        meta_end = data.find("]")
+        """Parse one hub line into a Hub object."""
         attr = ""
+        start = data.find("[")
+        end = data.find("]")
 
-        if meta_start != -1 and meta_end != -1 and meta_end > meta_start:
-            attr = data[meta_start + 1:meta_end]
-            data = data[:meta_start].strip()
+        if start != -1 and end != -1 and end > start:
+            attr = data[start + 1:end]
+            data = data[:start].strip()
 
         parts = data.split()
         if len(parts) < 3:
@@ -153,33 +143,35 @@ class Parser:
             )
         if len(parts) > 3:
             raise ValueError(
-                f"Line {i}: Unexpected tokens after x, y")
+                f"Line {i}: Unexpected tokens after x, y"
+            )
+
         name = parts[0]
-        if "-" in name:
+        if "-" in name or " " in name:
             raise ValueError(
-                f"Line {i}: Zone name '{name}' contains dashes"
+                f"Line {i}: Zone name '{name}' contains invalid "
+                f"characters (no dashes or spaces allowed)"
             )
 
         try:
-            x, y = int(parts[1]), int(parts[2])
+            x = int(parts[1])
+            y = int(parts[2])
         except ValueError:
             raise ValueError(f"Line {i}: x and y must be integers")
 
-        kwargs = self._parse_metadata(attr, i)
-        return Hub(name=name, x=x, y=y, **kwargs)
+        meta = self._parse_metadata(attr, i)
+        return Hub(name=name, x=x, y=y, **meta)
 
     def connection_parsing(self, data: str, i: int) -> Connection:
-        """
-        Parses a connection definition from a data string.
-        """
-        meta_start = data.find("[")
-        meta_end = data.find("]")
+        """Parse one connection line into a Connection object."""
         attr = ""
-        max_link_capacity = 1
+        cap = 1
+        start = data.find("[")
+        end = data.find("]")
 
-        if meta_start != -1 and meta_end != -1 and meta_end > meta_start:
-            attr = data[meta_start + 1:meta_end]
-            data = data[:meta_start].strip()
+        if start != -1 and end != -1 and end > start:
+            attr = data[start + 1:end]
+            data = data[:start].strip()
 
         parts = data.split("-")
         if len(parts) != 2:
@@ -187,7 +179,8 @@ class Parser:
                 f"Line {i}: Connection must be 'from-to'"
             )
 
-        from_hub, to_hub = parts[0].strip(), parts[1].strip()
+        from_hub = parts[0].strip()
+        to_hub = parts[1].strip()
         if not from_hub or not to_hub:
             raise ValueError(
                 f"Line {i}: Connection names cannot be empty"
@@ -202,71 +195,70 @@ class Parser:
                 f"Line {i}: Connection target '{to_hub}' undefined"
             )
 
-        fingerprint = "-".join(sorted([from_hub, to_hub]))
-        if fingerprint in self.seen_connections:
+        key = "-".join(sorted([from_hub, to_hub]))
+        if key in self.seen_connections:
             raise ValueError(
-                f"Line {i}: Duplicate connection '{from_hub}-{to_hub}'"
+                f"Line {i}: Duplicate connection "
+                f"'{from_hub}-{to_hub}'"
             )
-        self.seen_connections.add(fingerprint)
+        self.seen_connections.add(key)
 
         if attr:
-            for element in attr.split():
-                if "=" not in element:
+            for part in attr.split():
+                if "=" not in part:
                     raise ValueError(
-                        f"Line {i}: Invalid metadata token '{element}'"
+                        f"Line {i}: Invalid metadata token '{part}'"
                     )
-                k, v = element.split("=", 1)
+                k, v = part.split("=", 1)
                 if k == "max_link_capacity":
                     try:
-                        val = int(v)
-                        if val <= 0:
+                        nb = int(v)
+                        if nb <= 0:
                             raise ValueError()
-                        max_link_capacity = val
+                        cap = nb
                     except ValueError:
                         raise ValueError(
-                            f"Line {i}: max_link_capacity must be positive"
+                            f"Line {i}: max_link_capacity must be "
+                            f"positive"
                         )
                 else:
-                    raise ValueError(f"Line {i}: Unknown metadata key '{k}'")
-        return Connection(
-            from_hub=from_hub,
-            to_hub=to_hub,
-            max_link_capacity=max_link_capacity,
-        )
+                    raise ValueError(
+                        f"Line {i}: Unknown metadata key '{k}'"
+                    )
+
+        return Connection(from_hub, to_hub, cap)
 
     def starter_parsing(self, file: str) -> None:
-        """
-        Main parsing loop that orchestrates the map file processing.
-        """
+        """Read the whole map file and fill parser fields."""
         lines = self.open_file(file)
-        i = 1
-        has_parsed_drones = False
+        line_num = 1
+        got_drones = False
 
         for line in lines:
             line = line.strip()
-
             if not line or line.startswith("#"):
-                i += 1
+                line_num += 1
                 continue
 
-            if not has_parsed_drones:
+            if not got_drones:
                 if not line.startswith("nb_drones:"):
                     raise ValueError(
-                        f"Line {i}: Expected 'nb_drones:' first"
+                        f"Line {line_num}: Expected 'nb_drones:' first"
                     )
                 try:
-                    self.parse_nb_drone(line, i)
-                    has_parsed_drones = True
+                    self.parse_nb_drone(line, line_num)
+                    got_drones = True
                 except ValueError as e:
                     print(f"Fatal Error: {e}", file=sys.stderr)
                     sys.exit(1)
-                i += 1
+                line_num += 1
                 continue
 
             if ":" not in line:
                 print(
-                    f"Fatal Error (Line {i}): Expected ':' separator",
-                    file=sys.stderr
+                    f"Fatal Error (Line {line_num}): "
+                    f"Expected ':' separator",
+                    file=sys.stderr,
                 )
                 sys.exit(1)
 
@@ -276,44 +268,45 @@ class Parser:
 
             try:
                 if prefix in ("start_hub", "end_hub", "hub"):
-                    hub = self.hub_parse(data, i)
+                    hub = self.hub_parse(data, line_num)
                     if hub.name in self.hubs:
                         raise ValueError(
-                            f"Line {i}: Hub '{hub.name}' already exists"
+                            f"Line {line_num}: Hub "
+                            f"'{hub.name}' already exists"
                         )
                     self.hubs[hub.name] = hub
 
                     if prefix == "start_hub":
                         if self.start_hub is not None:
                             raise ValueError(
-                                f"Line {i}: Duplicate start_hub"
+                                f"Line {line_num}: Duplicate start_hub"
                             )
                         self.start_hub = hub
                     elif prefix == "end_hub":
                         if self.end_hub is not None:
                             raise ValueError(
-                                f"Line {i}: Duplicate end_hub"
+                                f"Line {line_num}: Duplicate end_hub"
                             )
                         self.end_hub = hub
 
                 elif prefix == "connection":
                     self.connections.append(
-                        self.connection_parsing(data, i)
+                        self.connection_parsing(data, line_num)
                     )
                 elif prefix == "nb_drones":
                     raise ValueError(
-                        f"Line {i}: Duplicate nb_drones definition"
+                        f"Line {line_num}: Duplicate nb_drones "
+                        f"definition"
                     )
                 else:
                     raise ValueError(
-                        f"Line {i}: Unknown prefix '{prefix}'"
+                        f"Line {line_num}: Unknown prefix '{prefix}'"
                     )
-
             except ValueError as e:
                 print(f"Fatal Error: {e}", file=sys.stderr)
                 sys.exit(1)
 
-            i += 1
+            line_num += 1
 
         if self.start_hub is None:
             print("Fatal Error: Missing start_hub", file=sys.stderr)

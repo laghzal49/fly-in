@@ -2,18 +2,18 @@
 
 # Fly-in: Drone Routing System
 
-
 ## Description
 
-Fly-in is an efficient drone routing system that navigates multiple autonomous drones through connected zones while minimizing simulation turns and handling complex movement constraints. The project implements advanced pathfinding algorithms that distribute drones across multiple paths, avoid conflicts, and optimize throughput in dynamic networks.
+Fly-in routes a fleet of drones from a start zone to an end zone through a
+network of connected hubs. The program parses a map file, finds conflict-free
+paths for every drone, then prints each turn of the simulation with colored
+terminal output.
 
-### Objective
-
-The goal is to route a fleet of drones from a central hub (start) to a target location (end) in the fewest possible simulation turns while respecting:
-- Zone capacity constraints (max_drones)
-- Connection capacity constraints (max_link_capacity)
-- Zone type movement costs (normal: 1 turn, restricted: 2 turns, priority: 1 turn)
-- Blocked zones (inaccessible areas)
+The goal is to deliver all drones in as few turns as possible while respecting:
+- Zone capacity (`max_drones`)
+- Link capacity (`max_link_capacity`)
+- Zone types: normal (1 turn), restricted (2 turns), priority (1 turn,
+  preferred first), blocked (impassable)
 
 ## Instructions
 
@@ -23,225 +23,165 @@ The goal is to route a fleet of drones from a central hub (start) to a target lo
 make install
 ```
 
-This installs the required dependencies (currently `webcolors` for terminal color support).
+Creates a virtual environment and installs `webcolors` for terminal colors.
 
-### Running the Simulator
-
-To run the simulator with a test map:
+### Running the simulator
 
 ```bash
 make run
+make run map=maps/easy/02_simple_fork.txt
 ```
 
-Or directly with a specific map file:
+Or directly:
 
 ```bash
-python3 main.py <path_to_map_file>
-```
-
-Example with all provided test maps:
-
-```bash
-python3 main.py maps/easy/01_linear_path.txt
-python3 main.py maps/easy/02_simple_fork.txt
-python3 main.py maps/medium/01_dead_end_trap.txt
-python3 main.py maps/hard/01_maze_nightmare.txt
+.venv/bin/python main.py maps/easy/01_linear_path.txt
 ```
 
 ### Debugging
 
-To run in debug mode with Python's built-in debugger:
-
 ```bash
-make debug
+make debug map=maps/medium/01_dead_end_trap.txt
 ```
 
-### Code Quality
-
-Lint and type check the codebase:
+### Check output (collision test)
 
 ```bash
-make lint           # Standard checks
-make lint-strict    # Strict mypy checks
+make check map=maps/hard/02_capacity_hell.txt
+```
+
+### Code quality
+
+```bash
+make lint
+make lint-strict
 ```
 
 ### Cleanup
-
-Remove temporary files and caches:
 
 ```bash
 make clean
 ```
 
-## Project Structure
+## Project structure
 
 ```
 .
-├── main.py           # Entry point orchestrating the simulation
-├── parser.py         # Map file parser (Hub, Connection, and validation)
-├── graph.py          # Graph network structure (GraphNetwork class)
-├── algo.py           # Pathfinding algorithm (PathFinder with space-time Dijkstra)
-├── simulation.py     # Simulation runner with colored terminal output
-├── zone.py           # Zone management and reservation tracking
-├── Makefile          # Build and task automation
-├── README.md         # This file
-└── maps/             # Test maps directory
-    ├── easy/         # Easy difficulty maps
-    ├── medium/       # Medium difficulty maps
-    ├── hard/         # Hard difficulty maps
-    └── challenger/   # Optional challenger maps
+├── main.py           # FlyInApp entry point
+├── parser.py         # Hub, Connection, Parser
+├── graph.py          # GraphNetwork
+├── algo.py           # PathFinder (space-time search)
+├── zone.py           # ReservationTable
+├── simulation.py     # Colored turn-by-turn output
+├── check_output.py   # OutputChecker (collision test)
+├── Makefile
+├── setup.cfg         # flake8 config
+├── mypy.ini          # mypy config
+└── maps/             # Test maps
 ```
 
-## Algorithm Design
+## Algorithm design
 
-### Space-Time Dijkstra with Dynamic Traffic Balancing
+### Overview
 
-The pathfinding algorithm uses a novel space-time Dijkstra approach combined with dynamic traffic balancing:
+The routing pipeline has four steps:
 
-1. **Backward Distance Precomputation**: Initially computes shortest distances from all hubs to the end zone using standard Dijkstra on the unweighted graph.
+1. **Parse** the map file (`Parser`)
+2. **Build** an undirected graph (`GraphNetwork`)
+3. **Route** each drone with a space-time search (`PathFinder`)
+4. **Print** the simulation turn by turn (`Simulation`)
 
-2. **Forward Space-Time Search**: For each drone, performs a Dijkstra search in the space-time domain (zone, turn):
-   - State: (zone, turn)
-   - Cost: turn count + congestion penalties
-   - Prevents backward movement (ensures progress toward goal)
+### PathFinder
 
-3. **Conflict Resolution**:
-   - Zone capacity checking: Verifies no zone exceeds its max_drones limit
-   - Connection capacity checking: Ensures link utilization stays within max_link_capacity
-   - Reservation table: Tracks all drone movements for conflict avoidance
+For each drone, paths are computed one after another. Each new path is reserved
+in a shared `ReservationTable` so later drones avoid conflicts.
 
-4. **Dynamic Traffic Balancing**:
-   - Global usage penalties: Penalizes frequently used zones to distribute drones across paths
-   - Look-ahead mechanism: Checks future zone availability to prevent deadlocks
-   - Adaptive congestion: Uses historical drone usage to guide path selection
+**Reachability:** before searching, a reverse BFS from the goal marks every hub
+that can still reach the end. Search never expands into dead-end zones.
 
-5. **Multi-Turn Movement Handling**:
-   - Restricted zones cost 2 turns to enter
-   - Priority zones receive lower sorting cost but same 1-turn movement
-   - Connections properly tracked during multi-turn transitions
+**Space-time search:** a min-heap explores states `(zone, turn)`. The cost is
+the number of turns spent. From each state the algorithm can:
+- Move to a neighbor (1 turn for normal/priority, 2 for restricted)
+- Wait one turn in the same zone (only if neighbors toward the goal exist)
 
-### Performance Characteristics
+**Priority zones:** neighbors are sorted so `priority` hubs are tried before
+`normal`, then `restricted`.
 
-- **Time Complexity**: O(D * E * T * log(V * T)) where:
-  - D = number of drones
-  - E = number of edges
-  - T = simulation turns
-  - V = number of vertices
+**Capacity checks:** before accepting a move, the algorithm verifies:
+- Destination zone capacity at the arrival turn
+- For restricted zones: capacity at both arrival turn and the turn before
+- Link capacity on every turn spent on the connection
 
-- **Space Complexity**: O(V * T) for reservation table storage
+**Waiting limit:** waiting is capped so the search cannot run forever when no
+path exists.
 
-- **Optimization Strategies**:
-  - Early path computation prevents recalculation
-  - Single-pass reservation avoids replay
-  - Congestion penalties guide drones to less-traveled paths
-  - Prevents deadlocks through capacity-aware scheduling
+**Reservation:** after a path is found, `_reserve` writes zone and link usage
+into the table. Restricted moves use a link step (`a-b`) that reserves the
+destination for two turns; the arrival step does not double-count.
 
-### Performance Benchmarks Achieved
+### Complexity
 
-- **Easy Maps**: Target ≤ 10 turns
-  - Linear path (2 drones): 4 turns ✓
-  - Simple fork (4 drones): 4 turns ✓
+- One drone search: roughly O(states × log(states)) with states bounded by
+  hubs × turns
+- All drones: multiplied by the number of drones D
+- Memory: reservation table grows with reserved `(zone/link, turn)` pairs
 
-- **Medium Maps**: Target 10-30 turns
-  - Dead end trap: Within target
-  - Circular loop: Within target
+## Visual representation
 
-- **Hard Maps**: Target < 60 turns
-  - All hard maps solvable
+Moves are printed as `D<id>-<zone>` or `D<id>-<from>-<to>` during restricted
+transit. Colors come from the hub `color=` metadata using ANSI escape codes.
+The special value `rainbow` cycles colors per character.
 
-## Visual Representation
+Drones that wait in place are omitted from that turn's line. Drones that reach
+the end zone are marked delivered and no longer tracked.
 
-### Terminal Color Output
-
-The simulator provides colored terminal output showing drone movements:
+Example:
 
 ```
-D1-waypoint1 D2-start
-D1-waypoint2 D2-waypoint1
+D1-hello
+D1-waypoint2 D2-hello
 D1-goal D2-waypoint2
 D2-goal
 ```
 
-Colors are automatically assigned based on zone metadata:
-- Green for start zones
-- Red for end/goal zones
-- Blue for waypoints
-- Gray for obstacles
-- Custom colors as specified in map files
+## Performance benchmarks
 
-### Output Format
+Measured output line count (= total simulation turns):
 
-Each simulation turn is printed as a single line containing:
-- Drone identifier: `D<id>` (e.g., D1, D2)
-- Destination: `<zone_name>` or `<connection_name>` for multi-turn movements
-- Drones that don't move in a turn are omitted
-- Format: `D<id>-<zone> D<id>-<zone> ...`
+| Map | Drones | Turns | Subject target |
+|-----|--------|-------|----------------|
+| easy/01_linear_path | 2 | 4 | ≤ 6 |
+| easy/02_simple_fork | 4 | 4 | ≤ 8 |
+| easy/03_basic_capacity | 4 | 4 | ≤ 6 |
+| medium/01_dead_end_trap | 5 | 8 | ≤ 12 |
+| medium/02_circular_loop | 6 | 15 | ≤ 15 |
+| medium/03_priority_puzzle | 5 | 7 | ≤ 12 |
+| hard/01_maze_nightmare | 8 | 13 | ≤ 30 |
+| hard/02_capacity_hell | 12 | 16 | ≤ 35 |
+| hard/03_ultimate_challenge | 15 | 26 | ≤ 45 |
+| challenger/01_the_impossible_dream | 25 | 43 | ≤ 45 (record) |
 
-## Technical Choices
+## Technical choices
 
-### Object-Oriented Design
-
-The entire system is built with object-oriented principles:
-- `Hub`: Represents zones with metadata
-- `GraphNetwork`: Manages graph structure and neighbor queries
-- `PathFinder`: Encapsulates pathfinding algorithm with state
-- `Simulation`: Handles turn-by-turn execution and output
-- `Drone`: Represents drone state and path tracking
-- `Zone`: Manages occupancy and capacity
-- `ReservationTable`: Tracks movements across space-time
-
-### Type Safety
-
-- Full type hints for all functions and variables
-- mypy static type checking with `--disallow-untyped-defs`
-- No untyped code paths
-
-### Error Handling
-
-- Graceful parsing with clear error messages
-- Exception handling for file I/O operations
-- Validation of map structure and parameters
-- Explicit error reporting on routing deadlocks
-
-## Constraints & Limitations
-
-- **No external graph libraries**: Implementation uses custom graph structure
-- **Python 3.10+**: Uses modern Python features (union types with `|`)
-- **Flake8 compliance**: All code follows PEP 8 style guidelines
-- **Type safe**: Complete type coverage with mypy
+- **OOP:** each major task has its own class (see project structure)
+- **No graph libraries:** custom adjacency list in `GraphNetwork`
+- **Type hints + mypy:** all functions typed; `make lint` runs flake8 and mypy
+- **Errors:** parser prints line number and reason; routing raises if a drone
+  has no valid path
 
 ## Resources
 
-### Graph Algorithms
-- Dijkstra's Algorithm: [Wikipedia](https://en.wikipedia.org/wiki/Dijkstra%27s_algorithm)
-- Space-Time Pathfinding: Domain-specific optimization for temporal conflicts
+- [Dijkstra's algorithm](https://en.wikipedia.org/wiki/Dijkstra%27s_algorithm)
+- [Python typing](https://docs.python.org/3/library/typing.html)
+- [Python heapq](https://docs.python.org/3/library/heapq.html)
+- [flake8](https://flake8.pycqa.org/)
+- [mypy](http://mypy-lang.org/)
+- [webcolors](https://webcolors.readthedocs.io/)
 
-### Python Documentation
-- [typing module](https://docs.python.org/3/library/typing.html)
-- [heapq module](https://docs.python.org/3/library/heapq.html) - Priority queue implementation
-- [dataclasses](https://docs.python.org/3/library/dataclasses.html)
+## AI usage
 
-### Development Tools
-- [flake8](https://flake8.pycqa.org/) - Style guide enforcement
-- [mypy](http://mypy-lang.org/) - Static type checker
-- [webcolors](https://webcolors.readthedocs.io/) - CSS color name to RGB conversion
-
-### Related Topics
-- Network flow optimization
-- Temporal constraint satisfaction
-- Multi-agent pathfinding
-- Capacity-constrained routing
-
-## AI Usage
-
-AI was used to support the following aspects of the project:
-
-1. **Documentation & Testing**:
-   - Docstring generation and code comments
-   - Test case design for edge cases
-   - Performance benchmark planning
-
-All AI-generated code was thoroughly reviewed, tested, and validated before integration. The core algorithm and final implementation represent original understanding and problem-solving.
+AI was used to help with documentation, debugging, and code review. All code
+was tested on the provided maps and checked with flake8/mypy before use.
 
 ## License
 
