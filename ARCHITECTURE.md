@@ -3,6 +3,10 @@
 This document explains how the project is organized, how data flows through
 the program, and what each class is responsible for.
 
+> **Per-file docs:** see the [`docs/`](docs/README.md) folder for detailed
+> architecture notes on every source file (`main.md`, `parser.md`, `algo.md`,
+> etc.).
+
 ## High-level pipeline
 
 The program runs in four stages:
@@ -36,6 +40,8 @@ Entry point: `FlyInApp` in `main.py`.
 | `algo.py` | Finds paths for all drones (`PathFinder`) |
 | `simulation.py` | Prints colored move lines each turn |
 | `check_output.py` | Optional tool to detect zone collisions |
+
+Per-file documentation: [`docs/`](docs/README.md)
 
 Supporting config: `Makefile`, `setup.cfg`, `mypy.ini`.
 
