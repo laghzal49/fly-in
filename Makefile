@@ -1,13 +1,17 @@
-.PHONY: install run debug clean lint lint-strict help
+.PHONY: install run debug clean lint lint-strict lint-deps check help
 
 MAP ?= maps/challenger/01_the_impossible_dream.txt
+PYTHON ?= .venv/bin/python
+PIP ?= .venv/bin/pip
+VENV_BIN := $(dir $(abspath $(PYTHON)))
 
 help:
 	@echo "Fly-in: Drone Routing System"
 	@echo "Available targets:"
-	@echo "  install        - Install project dependencies"
-	@echo "  run [map=FILE] - Run simulation (default: maps/easy/01_linear_path.txt)"
+	@echo "  install        - Create venv and install dependencies"
+	@echo "  run [map=FILE] - Run simulation"
 	@echo "  debug [map=FILE] - Run in debug mode with pdb"
+	@echo "  check [map=FILE] - Verify simulation output for collisions"
 	@echo "  clean          - Remove temporary files and caches"
 	@echo "  lint           - Run flake8 and mypy checks"
 	@echo "  lint-strict    - Run strict mypy checks"
@@ -19,14 +23,18 @@ help:
 	@echo "  make debug map=maps/medium/01_dead_end_trap.txt"
 
 install:
-	pip install --upgrade pip
-	pip install webcolors
+	python3 -m venv .venv
+	$(PIP) install --upgrade pip
+	$(PIP) install webcolors
 
 run:
-	python3 main.py $(MAP)
+	$(PYTHON) main.py $(MAP)
 
 debug:
-	python3 -m pdb main.py $(MAP)
+	$(PYTHON) -m pdb main.py $(MAP)
+
+check:
+	$(PYTHON) check_output.py $(MAP)
 
 clean:
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
@@ -35,10 +43,13 @@ clean:
 	find . -type f -name "*.pyo" -delete
 	find . -type f -name "*~" -delete
 
-lint:
-	flake8 .
-	mypy . --warn-return-any --warn-unused-ignores --ignore-missing-imports --disallow-untyped-defs --check-untyped-defs
+lint-deps:
+	$(PIP) install flake8 mypy
 
-lint-strict:
-	flake8 .
-	mypy . --strict
+lint: lint-deps
+	$(VENV_BIN)flake8 .
+	$(VENV_BIN)mypy . --warn-return-any --warn-unused-ignores --ignore-missing-imports --disallow-untyped-defs --check-untyped-defs
+
+lint-strict: lint-deps
+	$(VENV_BIN)flake8 .
+	$(VENV_BIN)mypy . --strict
