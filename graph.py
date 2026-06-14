@@ -1,20 +1,52 @@
 from parser import Hub, Connection
+from typing import List, Dict, Tuple, Optional
 
 
-class Graph_network:
+class GraphNetwork:
+    """
+    Represents the network of hubs and connections as a graph.
+    """
+
     def __init__(self) -> None:
-        self.adj = {}
-        self.weigh = {}
+        """
+        Initializes an empty graph network.
+        """
+        self.neighbors: Dict[str, List[str]] = {}
+        self.edges: Dict[Tuple[str, str], Connection] = {}
+        self.hubs: Dict[str, Hub] = {}
 
-    def add_zone(self, hub: Hub) -> None:
-        if hub.name not in self.adj:
-            self.adj[hub.name] = []
+    def create_graph(
+        self, hubs: Dict[str, Hub], connections: List[Connection]
+    ) -> None:
+        """
+        Builds the graph from the provided hubs and connections.
+        """
+        self.hubs = hubs
+        for hub in hubs.values():
+            self.neighbors[hub.name] = []
+        for conn in connections:
+            self.neighbors[conn.from_hub].append(conn.to_hub)
+            self.neighbors[conn.to_hub].append(conn.from_hub)
+            key = (min(conn.from_hub, conn.to_hub),
+                   max(conn.from_hub, conn.to_hub))
+            self.edges[key] = conn
 
-    def add_connection(self, conn: Connection) -> None:
-        if conn.to_hub not in self.adj[conn.from_hub]:
-            self.adj[conn.from_hub].append(conn.to_hub)
-        if conn.from_hub not in self.adj[conn.to_hub]:
-            self.adj[conn.to_hub].append(conn.from_hub)
-        first = min(conn.from_hub, conn.to_hub)
-        second = max(conn.from_hub, conn.to_hub)
-        self.weigh[first, second] = conn
+    def get_neighbor(self, zone: str) -> List[Hub]:
+        """
+        Returns a list of accessible neighbor hubs for a given zone.
+        """
+        if self.hubs[zone].zone == "blocked":
+            return []
+        return [
+            self.hubs[n] for n in self.neighbors.get(zone, [])
+            if self.hubs[n].zone != "blocked"
+        ]
+
+    def get_connection(
+        self, z1: str, z2: str
+    ) -> Optional[Connection]:
+        """
+        Returns the connection object between two zones, if it exists.
+        """
+        key = (min(z1, z2), max(z1, z2))
+        return self.edges.get(key)
