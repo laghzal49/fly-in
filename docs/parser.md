@@ -56,6 +56,8 @@ Main parser class. Public fields after parsing:
 | `connection_parsing(data, i)` | public | Parse one connection line |
 | `starter_parsing(file)` | public | Main loop over all lines |
 | `_parse_metadata(attr, i)` | private | Parse `[zone=... color=...]` |
+| `_extract_brackets(data, i)` | private | Split data into body + metadata; validate bracket syntax |
+| `_strip_inline_comment(line)` | static | Remove `# ...` after data (respects brackets) |
 
 ## How `starter_parsing` works
 
@@ -63,7 +65,8 @@ Main parser class. Public fields after parsing:
 flowchart TD
     A[Read each line] --> B{Comment or empty?}
     B -->|yes| A
-    B -->|no| C{First line?}
+    B -->|no| IC[Strip inline comment]
+    IC --> C{First line?}
     C -->|yes| D[Must be nb_drones:]
     C -->|no| E{prefix:}
     E -->|start_hub/end_hub/hub| F[hub_parse → hubs dict]
@@ -75,11 +78,15 @@ flowchart TD
 ```
 
 Rules enforced:
-- First real line must be `nb_drones:`
+- First real line must be `nb_drones:` (positive integer)
 - Exactly one `start_hub` and one `end_hub`
 - No duplicate hub names or connections
 - Connections only between existing hubs
-- Invalid metadata → `ValueError` with line number
+- Self-connections (`a-a`) are rejected
+- Zone names must not contain dashes or spaces
+- Bracket syntax is validated: unclosed `[`, stray `]`, or text after `]` → error
+- Inline comments (`# ...` after data) are stripped before parsing
+- Invalid metadata → `ValueError` with line number and cause
 
 ## Example input
 
@@ -105,9 +112,27 @@ len(parser.connections) == 2
 ## Error handling
 
 Parser prints `Fatal Error: ...` to stderr and calls `sys.exit(1)` on:
-- Bad line format
-- Missing start/end hub after parsing
-- Duplicate definitions
+- Missing or invalid `nb_drones` (empty, non-integer, zero, negative)
+- Missing `start_hub` or `end_hub` after parsing
+- Duplicate hub names, duplicate `start_hub`/`end_hub`, or duplicate connections
+- Undefined hubs referenced in connections
+- Self-connections (`a-a`)
+- Malformed bracket syntax (unclosed `[`, stray `]`, trailing text after `]`)
+- Unknown metadata keys or invalid values (`zone=invalid`, `max_drones=0`)
+- Unknown line prefix (not `hub`, `start_hub`, `end_hub`, `connection`)
+- Missing `:` separator on content lines
+
+### Error examples
+
+| Input | Error |
+|-------|-------|
+| `start_hub: s 0 0 [zone=normal` | `Unclosed '[' in metadata` |
+| `start_hub: s 0 0 zone=normal]` | `Unexpected ']' without opening '['` |
+| `start_hub: s 0 0 [zone=normal] extra` | `Unexpected text after ']'` |
+| `connection: s-s` | `Self-connection 's-s'` |
+| `hub: my-hub 0 0` | `Zone name 'my-hub' contains invalid characters` |
+| `hub: h 0 0 [zone=invalid]` | `Invalid zone type 'invalid'` |
+| `start_hub: s 0 0 # comment` | OK — inline comment stripped |
 
 ## Dependencies
 
