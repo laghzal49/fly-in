@@ -34,11 +34,15 @@ class FlyInApp:
 
         table = ReservationTable()
         finder = PathFinder(graph, table)
-        paths = finder.assign_all_paths(
-            parser.start_hub.name,
-            parser.end_hub.name,
-            parser.nb_drones,
-        )
+        try:
+            paths = finder.assign_all_paths(
+                parser.start_hub.name,
+                parser.end_hub.name,
+                parser.nb_drones,
+            )
+        except ValueError as err:
+            print(f"Error: {err}", file=sys.stderr)
+            sys.exit(1)
 
         sim = Simulation(paths, parser.end_hub.name, parser.hubs)
         sim.run()

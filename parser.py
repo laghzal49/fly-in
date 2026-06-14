@@ -126,15 +126,49 @@ class Parser:
 
         return data
 
+    def _extract_brackets(
+        self, data: str, i: int
+    ) -> tuple[str, str]:
+        """Split data into content before brackets and metadata.
+
+        Returns:
+            A tuple of (data_without_brackets, metadata_string).
+
+        Raises:
+            ValueError: If brackets are malformed or trailing text
+                exists after the closing bracket.
+        """
+        open_b = data.find("[")
+        close_b = data.find("]")
+
+        if open_b == -1 and close_b == -1:
+            return data, ""
+        if open_b != -1 and close_b == -1:
+            raise ValueError(
+                f"Line {i}: Unclosed '[' in metadata"
+            )
+        if open_b == -1 and close_b != -1:
+            raise ValueError(
+                f"Line {i}: Unexpected ']' without opening '['"
+            )
+        if close_b < open_b:
+            raise ValueError(
+                f"Line {i}: ']' appears before '['"
+            )
+
+        trailing = data[close_b + 1:].strip()
+        if trailing:
+            raise ValueError(
+                f"Line {i}: Unexpected text after ']'"
+            )
+
+        attr = data[open_b + 1:close_b]
+        body = data[:open_b].strip()
+        return body, attr
+
     def hub_parse(self, data: str, i: int) -> Hub:
         """Parse one hub line into a Hub object."""
-        attr = ""
-        start = data.find("[")
-        end = data.find("]")
-
-        if start != -1 and end != -1 and end > start:
-            attr = data[start + 1:end]
-            data = data[:start].strip()
+        data, attr = self._extract_brackets(data, i)
 
         parts = data.split()
         if len(parts) < 3:
@@ -164,14 +198,8 @@ class Parser:
 
     def connection_parsing(self, data: str, i: int) -> Connection:
         """Parse one connection line into a Connection object."""
-        attr = ""
+        data, attr = self._extract_brackets(data, i)
         cap = 1
-        start = data.find("[")
-        end = data.find("]")
-
-        if start != -1 and end != -1 and end > start:
-            attr = data[start + 1:end]
-            data = data[:start].strip()
 
         parts = data.split("-")
         if len(parts) != 2:
@@ -184,6 +212,11 @@ class Parser:
         if not from_hub or not to_hub:
             raise ValueError(
                 f"Line {i}: Connection names cannot be empty"
+            )
+
+        if from_hub == to_hub:
+            raise ValueError(
+                f"Line {i}: Self-connection '{from_hub}-{to_hub}'"
             )
 
         if from_hub not in self.hubs:
@@ -228,15 +261,36 @@ class Parser:
 
         return Connection(from_hub, to_hub, cap)
 
+    @staticmethod
+    def _strip_inline_comment(line: str) -> str:
+        """Remove an inline comment starting with '#'.
+
+        Brackets are respected: '#' inside [...] is kept.
+        """
+        in_bracket = False
+        for idx, ch in enumerate(line):
+            if ch == "[":
+                in_bracket = True
+            elif ch == "]":
+                in_bracket = False
+            elif ch == "#" and not in_bracket:
+                return line[:idx].rstrip()
+        return line
+
     def starter_parsing(self, file: str) -> None:
         """Read the whole map file and fill parser fields."""
         lines = self.open_file(file)
         line_num = 1
         got_drones = False
 
-        for line in lines:
-            line = line.strip()
+        for raw_line in lines:
+            line = raw_line.strip()
             if not line or line.startswith("#"):
+                line_num += 1
+                continue
+
+            line = self._strip_inline_comment(line)
+            if not line:
                 line_num += 1
                 continue
 
@@ -308,6 +362,12 @@ class Parser:
 
             line_num += 1
 
+        if not got_drones:
+            print(
+                "Fatal Error: Missing nb_drones definition",
+                file=sys.stderr,
+            )
+            sys.exit(1)
         if self.start_hub is None:
             print("Fatal Error: Missing start_hub", file=sys.stderr)
             sys.exit(1)
