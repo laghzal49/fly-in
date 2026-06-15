@@ -31,15 +31,15 @@ Entry point: `FlyInApp` in `main.py`.
 
 ## File map
 
-| File | Role |
-|------|------|
-| `main.py` | Orchestrates the four stages (`FlyInApp`) |
-| `parser.py` | Reads and validates the map file |
-| `graph.py` | Stores hubs and connections as a graph |
-| `zone.py` | Tracks zone/link usage per turn |
-| `algo.py` | Finds paths for all drones (`PathFinder`) |
-| `simulation.py` | Prints colored move lines each turn |
-| `check_output.py` | Optional tool to detect zone collisions |
+| File              | Role                                      |
+| ----------------- | ----------------------------------------- |
+| `main.py`         | Orchestrates the four stages (`FlyInApp`) |
+| `parser.py`       | Reads and validates the map file          |
+| `graph.py`        | Stores hubs and connections as a graph    |
+| `reservation.py`  | Tracks zone/link usage per turn           |
+| `algo.py`         | Finds paths for all drones (`PathFinder`) |
+| `simulation.py`   | Prints colored move lines each turn       |
+| `check_output.py` | Optional tool to detect zone collisions   |
 
 Per-file documentation: [`docs/`](docs/README.md)
 
@@ -164,11 +164,11 @@ Parser.connections → list[Connection]
 
 Builds an **undirected** adjacency list from parsed data.
 
-| Field | Content |
-|-------|---------|
-| `hubs` | Same hub dict from the parser |
-| `neighbors` | `zone → [neighbor names]` |
-| `edges` | `(min, max) → Connection` for lookup |
+| Field       | Content                              |
+| ----------- | ------------------------------------ |
+| `hubs`      | Same hub dict from the parser        |
+| `neighbors` | `zone → [neighbor names]`            |
+| `edges`     | `(min, max) → Connection` for lookup |
 
 ### Important behavior
 
@@ -180,11 +180,11 @@ defined only by connections.
 
 ---
 
-## Stage 3 — Routing (`algo.py` + `zone.py`)
+## Stage 3 — Routing (`algo.py` + `reservation.py`)
 
 This is the core of the project. Two classes work together:
 
-### `ReservationTable` (`zone.py`)
+### `ReservationTable` (`reservation.py`)
 
 A shared schedule of who uses what, and when.
 
@@ -197,6 +197,7 @@ Key                    Value
 Link ids look like `gate1_gate2` (sorted hub names).
 
 Methods:
+
 - `reserve_zone` / `reserve_link` — add a drone to a slot
 - `is_zone_available` / `is_link_available` — check capacity before moving
 
@@ -228,24 +229,24 @@ Priority neighbors are tried first (`priority` < `normal` < `restricted`).
 
 #### Step C — Capacity checks before each move
 
-| Check | When |
-|-------|------|
-| Zone free at arrival | Every move |
-| Zone free at arrival − 1 **and** arrival | Restricted destination |
-| Link free on every transit turn | Every move |
-| Goal zone | Always allowed (no capacity block) |
-| Start zone while waiting | Very high capacity (9999) |
+| Check                    | When                               |
+| ------------------------ | ---------------------------------- |
+| Zone free at arrival     | Every move                         |
+| Link free during transit | Every move                         |
+| Restricted destination   | Link is reserved for two turns     |
+| Goal zone                | Always allowed (no capacity block) |
+| Start zone               | Always allowed by subject rule     |
 
 #### Step D — Reservation after a path is found
 
 `_reserve` walks the path and updates the table:
 
-| Path entry | What gets reserved |
-|------------|-------------------|
-| `(zone, turn)` at start | Zone at that turn |
-| `(a-b, turn)` link step | Link at turn; destination zone at turn and turn+1 |
-| `(zone, turn)` normal arrival | Zone + link from previous hub |
-| `(zone, turn)` after link step | Skipped (already reserved by link step) |
+| Path entry                     | What gets reserved              |
+| ------------------------------ | ------------------------------- |
+| `(zone, turn)` at start        | Zone at that turn               |
+| `(a-b, turn)` link step        | Link at turn and turn + 1       |
+| `(zone, turn)` normal arrival  | Zone + link from previous hub   |
+| `(zone, turn)` after link step | Zone only; link already counted |
 
 #### Path format examples
 
@@ -344,12 +345,12 @@ shared reservation table built during routing.
 
 ## Error handling
 
-| Location | Behavior |
-|----------|----------|
-| `Parser` | Prints `Fatal Error: Line N: …` and exits |
-| `main.py` | Catches parse exceptions, prints to stderr |
+| Location     | Behavior                                   |
+| ------------ | ------------------------------------------ |
+| `Parser`     | Prints `Fatal Error: Line N: …` and exits  |
+| `main.py`    | Catches parse exceptions, prints to stderr |
 | `PathFinder` | Raises `ValueError` if a drone has no path |
-| `Simulation` | Returns early if paths dict is empty |
+| `Simulation` | Returns early if paths dict is empty       |
 
 ---
 
@@ -369,14 +370,14 @@ make check map=maps/hard/02_capacity_hell.txt
 
 ## Design choices
 
-| Choice | Reason |
-|--------|--------|
-| OOP with one class per concern | Required by subject; easy to explain at eval |
-| Custom graph, no networkx | Subject forbids graph libraries |
-| Sequential routing (D1 then D2…) | Simple reservation; works well on all maps |
-| Space-time heap, not pure BFS | Handles waiting and turn costs naturally |
-| Reverse BFS from goal | Prunes dead-end expansion early |
-| Reservation table | Prevents zone/link over-capacity across drones |
+| Choice                           | Reason                                         |
+| -------------------------------- | ---------------------------------------------- |
+| OOP with one class per concern   | Required by subject; easy to explain at eval   |
+| Custom graph, no networkx        | Subject forbids graph libraries                |
+| Sequential routing (D1 then D2…) | Simple reservation; works well on all maps     |
+| Space-time heap, not pure BFS    | Handles waiting and turn costs naturally       |
+| Reverse BFS from goal            | Prunes dead-end expansion early                |
+| Reservation table                | Prevents zone/link over-capacity across drones |
 
 ---
 
