@@ -95,6 +95,14 @@ class PathFinder:
         link = self._link_name(src, dst)
         return self.zone_use.get(dst, 0) + self.link_use.get(link, 0)
 
+    def _path_zones(self, path: list[PathStep]) -> set[str]:
+        """Return real zones already used by a path."""
+        zones: set[str] = set()
+        for step, _ in path:
+            if "-" not in step:
+                zones.add(step)
+        return zones
+
     def _can_move(
         self,
         src: str,
@@ -136,8 +144,11 @@ class PathFinder:
                 continue
             best_score[state] = score
 
+            visited = self._path_zones(path)
             for neighbor in self._neighbors(zone):
                 dst = neighbor.name
+                if dst in visited and dst != end:
+                    continue
                 if not self._can_move(zone, dst, turn, start, end):
                     continue
 
