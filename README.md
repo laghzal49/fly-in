@@ -1,4 +1,4 @@
-*This project has been created as part of the 42 curriculum by tlaghzal.*
+_This project has been created as part of the 42 curriculum by tlaghzal._
 
 # Fly-in: Drone Routing System
 
@@ -10,6 +10,7 @@ paths for every drone, then prints each turn of the simulation with colored
 terminal output.
 
 The goal is to deliver all drones in as few turns as possible while respecting:
+
 - Zone capacity (`max_drones`)
 - Link capacity (`max_link_capacity`)
 - Zone types: normal (1 turn), restricted (2 turns), priority (1 turn,
@@ -71,7 +72,7 @@ make clean
 ├── parser.py         # Hub, Connection, Parser
 ├── graph.py          # GraphNetwork
 ├── algo.py           # PathFinder (space-time search)
-├── zone.py           # ReservationTable
+├── reservation.py    # ReservationTable
 ├── simulation.py     # Colored turn-by-turn output
 ├── check_output.py   # OutputChecker (collision test)
 ├── Makefile
@@ -101,23 +102,29 @@ that can still reach the end. Search never expands into dead-end zones.
 
 **Space-time search:** a min-heap explores states `(zone, turn)`. The cost is
 the number of turns spent. From each state the algorithm can:
-- Move to a neighbor (1 turn for normal/priority, 2 for restricted)
+
+- Move to a neighbor (1 turn normally, 2 turns when the destination is restricted)
 - Wait one turn in the same zone (only if neighbors toward the goal exist)
 
 **Priority zones:** neighbors are sorted so `priority` hubs are tried before
 `normal`, then `restricted`.
 
+**Multiple paths:** already-used zones and links receive a small congestion
+penalty. This pushes later drones toward alternative routes when several paths
+have similar cost.
+
 **Capacity checks:** before accepting a move, the algorithm verifies:
+
 - Destination zone capacity at the arrival turn
-- For restricted zones: capacity at both arrival turn and the turn before
-- Link capacity on every turn spent on the connection
+- Link capacity while the drone is on the connection
+- Start and end zone exceptions from the subject
 
 **Waiting limit:** waiting is capped so the search cannot run forever when no
 path exists.
 
 **Reservation:** after a path is found, `_reserve` writes zone and link usage
-into the table. Restricted moves use a link step (`a-b`) that reserves the
-destination for two turns; the arrival step does not double-count.
+into the table. Restricted destination moves print a connection step first
+(`a-b`), then the destination zone on the next turn.
 
 ### Complexity
 
@@ -148,18 +155,18 @@ D2-goal
 
 Measured output line count (= total simulation turns):
 
-| Map | Drones | Turns | Subject target |
-|-----|--------|-------|----------------|
-| easy/01_linear_path | 2 | 4 | ≤ 6 |
-| easy/02_simple_fork | 4 | 4 | ≤ 8 |
-| easy/03_basic_capacity | 4 | 4 | ≤ 6 |
-| medium/01_dead_end_trap | 5 | 8 | ≤ 12 |
-| medium/02_circular_loop | 6 | 15 | ≤ 15 |
-| medium/03_priority_puzzle | 5 | 7 | ≤ 12 |
-| hard/01_maze_nightmare | 8 | 13 | ≤ 30 |
-| hard/02_capacity_hell | 12 | 16 | ≤ 35 |
-| hard/03_ultimate_challenge | 15 | 26 | ≤ 45 |
-| challenger/01_the_impossible_dream | 25 | 43 | ≤ 45 (record) |
+| Map                                | Drones | Turns | Subject target |
+| ---------------------------------- | ------ | ----- | -------------- |
+| easy/01_linear_path                | 2      | 4     | ≤ 6            |
+| easy/02_simple_fork                | 4      | 4     | ≤ 8            |
+| easy/03_basic_capacity             | 4      | 4     | ≤ 6            |
+| medium/01_dead_end_trap            | 5      | 8     | ≤ 12           |
+| medium/02_circular_loop            | 6      | 15    | ≤ 15           |
+| medium/03_priority_puzzle          | 5      | 7     | ≤ 12           |
+| hard/01_maze_nightmare             | 8      | 13    | ≤ 30           |
+| hard/02_capacity_hell              | 12     | 16    | ≤ 35           |
+| hard/03_ultimate_challenge         | 15     | 26    | ≤ 45           |
+| challenger/01_the_impossible_dream | 25     | 43    | ≤ 45 (record)  |
 
 ## Technical choices
 

@@ -1,186 +1,180 @@
-# algo.py
+# `algo.py`
 
 ## Purpose
 
-Finds a valid path for **each drone** from start to goal in minimum turns,
-respecting zone types, capacities, and existing reservations.
+`algo.py` finds a valid route for every drone from the start hub to the end hub.
+It uses a simple Dijkstra-style search over time:
 
-This is the **core algorithm** of the project.
-
-## Location in the pipeline
-
-```
-GraphNetwork + ReservationTable  →  PathFinder  →  dict[drone_id → path]
+```text
+state = current zone + current turn
 ```
 
-## Types
-
-```python
-PathStep = tuple[str, int]       # (zone_or_link, turn)
-HeapItem = (cost, id, zone, turn, path, visited_hubs)
-```
-
-## Constants
-
-```python
-ZONE_PRIO = {"priority": 0, "normal": 1, "restricted": 2}
-```
-
-Lower number = tried first when expanding neighbors.
-
-## Class: `PathFinder`
-
-### Fields
-
-| Field | Role |
-|-------|------|
-| `graph` | Network structure |
-| `table` | Shared reservations |
-| `heap_id` | Tie-breaker for heap stability |
-| `can_reach` | Hubs that can still reach the goal |
-
-### Public methods
-
-| Method | Returns | Role |
-|--------|---------|------|
-| `find_path(start, end)` | `list[PathStep]` | One drone, shortest valid path |
-| `assign_all_paths(start, end, nb)` | `dict[int, list]` | All drones D1…Dn |
-
-### Private helpers
-
-| Method | Role |
-|--------|------|
-| `_mark_reachable(end)` | Reverse BFS from goal |
-| `_sorted_neighbors(zone)` | Goal-ward neighbors, priority sorted |
-| `_zone_free(...)` | Zone capacity at arrival |
-| `_link_free(...)` | Link capacity during transit |
-| `_max_turn_limit()` | Cap waiting to avoid infinite search |
-| `_reserve(path)` | Write path into reservation table |
+After a drone gets a path, that path is reserved before routing the next drone.
+This lets later drones avoid full zones and full links.
 
 ---
 
-## Algorithm overview
+## Main types
+
+```python
+PathStep = tuple[str, int]
+```
+
+A `PathStep` is:
+
+```text
+(zone_or_link_name, turn)
+```
+
+Examples:
+
+```python
+("gate", 1)        # drone is in zone gate at turn 1
+("gate-maze", 2)   # drone uses link gate -> maze at turn 2
+```
+
+---
+
+## Zone priority
+
+Neighbors are tried in this order:
+
+```python
+priority -> normal -> restricted
+```
+
+This does not force a path. It only decides which equal-cost options are explored first.
+
+---
+
+## Search flow
 
 ```mermaid
 flowchart TD
-    A[assign_all_paths] --> B[Reverse BFS from goal]
-    B --> C[For drone 1 to N]
-    C --> D[find_path heap search]
-    D --> E[_reserve path]
+    A[assign_all_paths] --> B[mark hubs that can reach end]
+    B --> C[for each drone]
+    C --> D[find_path]
+    D --> E[reserve path]
     E --> C
 ```
 
-### Step 1 — Reverse BFS (`_mark_reachable`)
+---
 
-From the **goal**, walk backward through neighbors. Only hubs in
-`can_reach` are expanded during search. Dead ends are pruned early.
+## `find_path(start, end)`
 
-### Step 2 — Space-time search (`find_path`)
-
-Min-heap ordered by **turn cost**. Each state:
-
-```
-(zone, turn, path_so_far, visited_hubs)
-```
-
-From each state, try:
-
-1. **Move** to a sorted neighbor
-2. **Wait** one turn (if neighbors exist and under turn limit)
-
-Stop when:
-- Goal reached → return path
-- Heap empty → return `[]` (no path)
-
-### Step 3 — Move costs
-
-| Destination zone type | Turns |
-|----------------------|-------|
-| normal | 1 |
-| priority | 1 (preferred in neighbor order) |
-| restricted | 2 |
-| blocked | not reachable |
-
-### Step 4 — Restricted move path format
-
-Moving `start` → `slow` (restricted) at turn 0:
+Uses a min-heap:
 
 ```python
-[
-  ("start", 0),
-  ("start-slow", 1),   # on link — printed as D1-start-slow
-  ("slow", 2),         # arrived
-]
+(cost, zone, turn, path)
 ```
 
-### Step 5 — Capacity checks
+At every state, the algorithm tries:
 
-Before accepting a move:
+1. Move to each reachable neighbor
+2. Wait one turn if the current zone has capacity
 
-| Check | When |
-|-------|------|
-| `_zone_free` at arrival | Always (except goal) |
-| `_zone_free` at arrival−1 **and** arrival | Restricted destination |
-| `_link_free` every transit turn | Always |
-| Start zone while waiting | cap = 9999 |
+Already-checked `(zone, turn)` states are skipped, so loops cannot grow forever. The search stops when the current zone is the end zone.
 
-### Step 6 — Reservation (`_reserve`)
-
-| Path entry | Reservation |
-|------------|-------------|
-| First `(zone, turn)` | zone at turn |
-| Link `(a-b, turn)` | link + zone b at turn and turn+1 |
-| Normal `(zone, turn)` | zone + links from previous hub |
-| After link step | **skip** duplicate zone reserve |
+A small congestion penalty is added for zones/links already used by earlier drones. This makes equal-cost routes split across multiple paths instead of always choosing the first neighbor.
 
 ---
 
-## Example: two drones, one bottleneck
+## Normal movement
 
-```
-Turn 1: D1 reserves gate@1
-Turn 2: D2 search sees gate@1 full → waits or detours
-```
-
-Sequential routing (D1 then D2) + shared table = automatic deconfliction.
-
----
-
-## Input / output
-
-| In | Out |
-|----|-----|
-| start name, end name, nb_drones | `{1: path, 2: path, …}` |
-| Graph + table state | Raises `ValueError` if any drone has no path |
-
----
-
-## Dependencies
+From a normal/priority zone `A` to zone `B`:
 
 ```python
-from graph import GraphNetwork
-from parser import Hub
-from zone import ReservationTable
-import heapq
+("B", turn + 1)
+```
+
+Checks:
+
+- link `A-B` at `turn + 1`
+- zone `B` at `turn + 1`
+
+---
+
+## Restricted movement
+
+Restricted cost is based on the **destination** zone, as required by the subject.
+
+If the drone moves from `A` to restricted zone `B`, the path adds:
+
+```python
+("A-B", turn + 1)
+("B", turn + 2)
+```
+
+Meaning:
+
+| Turn       | Meaning                                               |
+| ---------- | ----------------------------------------------------- |
+| `turn + 1` | drone is on the connection toward restricted zone `B` |
+| `turn + 2` | drone arrives in restricted zone `B`                  |
+
+Output example:
+
+```text
+D1-A-B
+D1-B
 ```
 
 ---
 
-## Complexity (informal)
+## Capacity checks
 
-- Reverse BFS: O(V + E)
-- One search: O(states × log states), states ≤ hubs × max_turn
-- All drones: × N
+Before moving, the algorithm checks the reservation table.
+
+### Normal/priority source
+
+Moving `A -> B` checks:
+
+- link `A-B` at `turn + 1`
+- zone `B` at `turn + 1`
+
+### Restricted destination
+
+Moving from `A -> B` where `B` is restricted checks:
+
+- link `A-B` at `turn + 1`
+- link `A-B` at `turn + 2`
+- zone `B` at `turn + 2`
+
+The end zone ignores zone capacity.
 
 ---
 
-## Peer eval tips
+## Reservation
 
-- **Q: Dijkstra or BFS?** → Min-heap by turn count = shortest-path in
-  time-expanded graph (space-time Dijkstra style).
-- **Q: Why wait?** → When a zone/link is full, waiting may free a slot
-  later.
-- **Q: Why frozenset for visited?** → Hashable for heap; prevents cycle
-  in same path.
-- **Q: Why sequential drones?** → Simple; each reservation narrows options
-  for the next drone.
+After finding a path, `_reserve(path)` writes it into `ReservationTable`.
+
+| Path step          | Reservation                           |
+| ------------------ | ------------------------------------- |
+| `("A", t)`         | reserve zone `A` at `t`               |
+| `("A-B", t)`       | reserve link `A-B` at `t` and `t + 1` |
+| repeated same zone | wait; reserve only the zone           |
+
+If a zone step comes right after a link step, the link has already been reserved.
+
+---
+
+## Why drones are routed one by one
+
+The algorithm is simple:
+
+1. Find path for drone 1
+2. Reserve it
+3. Find path for drone 2 using the updated reservations
+4. Repeat
+
+This avoids collisions without needing one huge multi-drone search.
+
+---
+
+## Failure
+
+If a drone cannot find any valid path, the algorithm raises:
+
+```python
+ValueError("No path for drone D...")
+```

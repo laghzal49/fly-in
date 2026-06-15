@@ -1,6 +1,7 @@
 .PHONY: install run debug clean lint lint-strict lint-deps check help
 
-MAP ?= maps/challenger/01_the_impossible_dream.txt
+DEFAULT_MAP := maps/challenger/01_the_impossible_dream.txt
+MAP ?= $(if $(map),$(map),$(DEFAULT_MAP))
 PYTHON ?= .venv/bin/python
 PIP ?= .venv/bin/pip
 VENV_BIN := $(dir $(abspath $(PYTHON)))

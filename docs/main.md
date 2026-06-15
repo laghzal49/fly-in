@@ -11,7 +11,7 @@ pipeline: **parse → graph → route → simulate**.
 flowchart LR
     A[main.py] --> B[parser.py]
     B --> C[graph.py]
-    C --> D[algo.py + zone.py]
+    C --> D[algo.py + reservation.py]
     D --> E[simulation.py]
 ```
 
@@ -21,14 +21,14 @@ flowchart LR
 
 Main application class. One instance = one run with one map file.
 
-| Member | Type | Description |
-|--------|------|-------------|
+| Member     | Type  | Description                    |
+| ---------- | ----- | ------------------------------ |
 | `map_file` | `str` | Path to the map file from argv |
 
-| Method | Description |
-|--------|-------------|
-| `__init__(map_file)` | Stores the map path |
-| `run()` | Executes all four stages |
+| Method               | Description              |
+| -------------------- | ------------------------ |
+| `__init__(map_file)` | Stores the map path      |
+| `run()`              | Executes all four stages |
 
 ### `main()`
 
@@ -54,10 +54,10 @@ Free function called when the script runs. Checks that exactly one argument
 
 ## Input / output
 
-| In | Out |
-|----|-----|
-| Map file path (CLI arg) | Colored lines on stdout |
-| | Errors on stderr + exit code 1 |
+| In                      | Out                            |
+| ----------------------- | ------------------------------ |
+| Map file path (CLI arg) | Colored lines on stdout        |
+|                         | Errors on stderr + exit code 1 |
 
 ## Dependencies
 
@@ -65,8 +65,8 @@ Free function called when the script runs. Checks that exactly one argument
 from algo import PathFinder
 from graph import GraphNetwork
 from parser import Parser
+from reservation import ReservationTable
 from simulation import Simulation
-from zone import ReservationTable
 ```
 
 ## Error handling

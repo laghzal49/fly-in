@@ -1,126 +1,127 @@
-"""Print drone moves turn by turn with colors."""
+"""Print drone moves turn by turn."""
 
-from typing import Dict, List, Optional, Set, Tuple
+# pyright: reportMissingTypeStubs=false
+
+from __future__ import annotations
 
 import webcolors
 
 from parser import Hub
 
-PathStep = Tuple[str, int]
+PathStep = tuple[str, int]
+
+RAINBOW = [
+    "\033[38;5;197m",
+    "\033[38;5;46m",
+    "\033[38;5;226m",
+    "\033[38;5;51m",
+    "\033[38;5;135m",
+    "\033[38;5;208m",
+]
+RESET = "\033[0m"
 
 
 class Simulation:
-    """Show each turn of the drone simulation in the terminal."""
+    """Replay computed paths and print visible drone moves."""
 
     def __init__(
         self,
-        paths: Dict[int, List[PathStep]],
+        paths: dict[int, list[PathStep]],
         end_zone: str,
-        hubs: Dict[str, Hub],
+        hubs: dict[str, Hub],
     ) -> None:
-        """Store paths, goal zone, and hub colors."""
-        self.paths = paths
-        self.end_zone = end_zone
-        self.hubs = hubs
-        self.reset = "\033[0m"
-        self.rainbow = [
-            "\033[38;5;197m",
-            "\033[38;5;46m",
-            "\033[38;5;226m",
-            "\033[38;5;51m",
-            "\033[38;5;135m",
-            "\033[38;5;208m",
-        ]
+        """Store paths, end zone, and hub metadata."""
+        self.paths: dict[int, list[PathStep]] = paths
+        self.end_zone: str = end_zone
+        self.hubs: dict[str, Hub] = hubs
 
-    def _color_code(self, name: Optional[str]) -> str:
-        """Convert a color name to an ANSI code."""
-        if not name or name.lower() in (
-            "none", "normal", "", "rainbow"
-        ):
+    def _last_turn(self) -> int:
+        """Return the last turn used by any path."""
+        if not self.paths:
+            return 0
+        return max(path[-1][1] for path in self.paths.values() if path)
+
+    def _move_color(self, move: str) -> str:
+        """Return the color configured for a zone or link move."""
+        zone = move.split("-", 1)[1] if "-" in move else move
+        hub = self.hubs.get(zone)
+        return hub.color if hub else "none"
+
+    def _ansi_color(self, color: str) -> str:
+        """Convert a color name to ANSI, or empty string if invalid."""
+        if color.lower() in ("", "none", "normal", "rainbow"):
             return ""
+
         try:
-            rgb = webcolors.name_to_rgb(name.lower())
-            return (
-                f"\033[38;2;{rgb.red};{rgb.green};{rgb.blue}m"
-            )
+            rgb = webcolors.name_to_rgb(color.lower())
         except ValueError:
             return ""
 
-    def _hub_color(self, zone: str) -> Optional[str]:
-        """Get the color set on the hub for this move."""
-        if "-" in zone:
-            dest = zone.split("-", 1)[1]
-            if dest in self.hubs:
-                return self.hubs[dest].color
-        elif zone in self.hubs:
-            return self.hubs[zone].color
-        return None
+        return f"\033[38;2;{rgb.red};{rgb.green};{rgb.blue}m"
 
-    def _rainbow_text(self, text: str, drone_id: int) -> str:
-        """Color each character with a cycling rainbow."""
-        out = ""
-        for i, char in enumerate(text):
-            code = self.rainbow[(drone_id + i) % len(self.rainbow)]
-            out += f"{code}{char}{self.reset}"
-        return out
+    def _rainbow(self, text: str, drone_id: int) -> str:
+        """Apply rainbow colors to text."""
+        result = ""
+        for index, char in enumerate(text):
+            color = RAINBOW[(drone_id + index) % len(RAINBOW)]
+            result += f"{color}{char}{RESET}"
+        return result
 
-    def _format_move(
-        self, text: str, color: Optional[str], drone_id: int
-    ) -> str:
-        """Apply solid color or rainbow to one move string."""
-        if color and color.lower() == "rainbow":
-            return self._rainbow_text(text, drone_id)
-        code = self._color_code(color)
-        if code:
-            return f"{code}{text}{self.reset}"
+    def _format(self, drone_id: int, move: str) -> str:
+        """Build one printable drone move."""
+        text = f"D{drone_id}-{move}"
+        color = self._move_color(move)
+
+        if color.lower() == "rainbow":
+            return self._rainbow(text, drone_id)
+
+        ansi = self._ansi_color(color)
+        if ansi:
+            return f"{ansi}{text}{RESET}"
         return text
 
-    def _last_turn(self) -> int:
-        """Find the last turn used by any drone."""
-        max_turn = 0
-        for path in self.paths.values():
-            if path and path[-1][1] > max_turn:
-                max_turn = path[-1][1]
-        return max_turn
+    def _moves_at_turn(
+        self,
+        turn: int,
+        last_move: dict[int, str],
+        delivered: set[int],
+    ) -> list[str]:
+        """Return all printable moves for one turn."""
+        moves: list[str] = []
 
-    def _is_delivered(self, zone: str) -> bool:
-        """Return True when the drone has reached the end zone."""
-        return zone == self.end_zone
+        for drone_id, path in self.paths.items():
+            if drone_id in delivered:
+                continue
+
+            for move, move_turn in path:
+                if move_turn != turn:
+                    continue
+
+                if move == last_move.get(drone_id):
+                    break
+
+                last_move[drone_id] = move
+                moves.append(self._format(drone_id, move))
+
+                if move == self.end_zone:
+                    delivered.add(drone_id)
+                break
+
+        return moves
 
     def run(self) -> None:
-        """Print all moves from turn 1 until every drone is delivered."""
-        if not self.paths:
-            return
+        """Print one output line per turn."""
+        last_move = {
+            drone_id: path[0][0]
+            for drone_id, path in self.paths.items()
+            if path
+        }
+        delivered: set[int] = set()
 
-        last_zone: Dict[int, str] = {}
-        delivered: Set[int] = set()
-        for drone_id, path in self.paths.items():
-            if path:
-                last_zone[drone_id] = path[0][0]
-
-        turn = 1
-        while turn <= self._last_turn():
+        for turn in range(1, self._last_turn() + 1):
             if len(delivered) == len(self.paths):
                 break
 
-            moves: List[str] = []
-            for drone_id, path in self.paths.items():
-                if drone_id in delivered:
-                    continue
-                for zone, t in path:
-                    if t != turn:
-                        continue
-                    if zone == last_zone[drone_id]:
-                        break
-                    last_zone[drone_id] = zone
-                    text = f"D{drone_id}-{zone}"
-                    color = self._hub_color(zone)
-                    moves.append(
-                        self._format_move(text, color, drone_id)
-                    )
-                    if self._is_delivered(zone):
-                        delivered.add(drone_id)
-                    break
+            moves = self._moves_at_turn(turn, last_move, delivered)
             if moves:
                 print(" ".join(moves))
-            turn += 1
