@@ -1,11 +1,6 @@
 """Print drone moves turn by turn."""
-
-# pyright: reportMissingTypeStubs=false
-
 from __future__ import annotations
-
 import webcolors
-
 from parser import Hub
 
 PathStep = tuple[str, int]
@@ -49,7 +44,7 @@ class Simulation:
 
     def _ansi_color(self, color: str) -> str:
         """Convert a color name to ANSI, or empty string if invalid."""
-        if color.lower() in ("", "none", "normal", "rainbow"):
+        if color.lower() in ("", "none", "normal"):
             return ""
 
         try:
