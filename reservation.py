@@ -40,3 +40,10 @@ class ReservationTable:
     ) -> bool:
         """Return True if a link still has room."""
         return self._count(self._link_name(z1, z2), turn) < capacity
+
+    @property
+    def max_turn(self) -> int:
+        """Return the highest turn currently reserved, or 0 if empty."""
+        if not self.table:
+            return 0
+        return max(turn for _, turn in self.table.keys())

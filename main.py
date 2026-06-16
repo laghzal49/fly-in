@@ -29,9 +29,7 @@ class FlyInApp:
             print("Error: Missing start or end hub", file=sys.stderr)
             sys.exit(1)
 
-        graph = GraphNetwork()
-        graph.create_graph(parser.hubs, parser.connections)
-
+        graph = GraphNetwork(parser.hubs, parser.connections)
         table = ReservationTable()
         finder = PathFinder(graph, table)
         try:

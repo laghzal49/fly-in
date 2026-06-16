@@ -8,18 +8,14 @@ from parser import Connection, Hub
 class GraphNetwork:
     """Stores hubs, neighbors, and link data."""
 
-    def __init__(self) -> None:
-        """Create an empty graph."""
+    def __init__(self, hubs: Dict[str, Hub],
+                 connections: List[Connection]) -> None:
+        """Create a graph from parsed map data."""
         self.neighbors: Dict[str, List[str]] = {}
         self.edges: Dict[Tuple[str, str], Connection] = {}
-        self.hubs: Dict[str, Hub] = {}
+        self.hubs: Dict[str, Hub] = hubs
 
-    def create_graph(
-        self, hubs: Dict[str, Hub], connections: List[Connection]
-    ) -> None:
-        """Fill the graph from parsed map data."""
-        self.hubs = hubs
-        for hub in hubs.values():
+        for hub in self.hubs.values():
             self.neighbors[hub.name] = []
 
         for conn in connections:

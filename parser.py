@@ -1,6 +1,6 @@
 """Read and validate map files."""
 
-import sys
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 
@@ -38,6 +38,16 @@ class Connection:
         self.from_hub = from_hub
         self.to_hub = to_hub
         self.max_link_capacity = max_link_capacity
+
+
+@dataclass
+class MapData:
+    """Contains all parsed data from a map file."""
+    nb_drones: int
+    start_hub: Hub
+    end_hub: Hub
+    hubs: Dict[str, Hub]
+    connections: List[Connection]
 
 
 class Parser:
@@ -192,7 +202,6 @@ class Parser:
             y = int(parts[2])
         except ValueError:
             raise ValueError(f"Line {i}: x and y must be integers")
-
         meta = self._parse_metadata(attr, i)
         return Hub(name=name, x=x, y=y, **meta)
 
@@ -277,7 +286,7 @@ class Parser:
                 return line[:idx].rstrip()
         return line
 
-    def starter_parsing(self, file: str) -> None:
+    def starter_parsing(self, file: str) -> MapData:
         """Read the whole map file and fill parser fields."""
         lines = self.open_file(file)
         line_num = 1
@@ -303,18 +312,12 @@ class Parser:
                     self.parse_nb_drone(line, line_num)
                     got_drones = True
                 except ValueError as e:
-                    print(f"Fatal Error: {e}", file=sys.stderr)
-                    sys.exit(1)
+                    raise ValueError(e)
                 line_num += 1
                 continue
 
             if ":" not in line:
-                print(
-                    f"Fatal Error (Line {line_num}): "
-                    f"Expected ':' separator",
-                    file=sys.stderr,
-                )
-                sys.exit(1)
+                raise ValueError(f"Line {line_num}: Expected \':\' separator")
 
             prefix, data = line.split(":", 1)
             prefix = prefix.strip()
@@ -357,20 +360,21 @@ class Parser:
                         f"Line {line_num}: Unknown prefix '{prefix}'"
                     )
             except ValueError as e:
-                print(f"Fatal Error: {e}", file=sys.stderr)
-                sys.exit(1)
+                raise ValueError(e)
 
             line_num += 1
 
         if not got_drones:
-            print(
-                "Fatal Error: Missing nb_drones definition",
-                file=sys.stderr,
-            )
-            sys.exit(1)
+            raise ValueError("Missing nb_drones definition")
         if self.start_hub is None:
-            print("Fatal Error: Missing start_hub", file=sys.stderr)
-            sys.exit(1)
+            raise ValueError("Missing start_hub")
         if self.end_hub is None:
-            print("Fatal Error: Missing end_hub", file=sys.stderr)
-            sys.exit(1)
+            raise ValueError("Missing end_hub")
+
+        return MapData(
+            nb_drones=self.nb_drones,
+            start_hub=self.start_hub,
+            end_hub=self.end_hub,
+            hubs=self.hubs,
+            connections=self.connections,
+        )

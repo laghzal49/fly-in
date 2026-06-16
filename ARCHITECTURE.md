@@ -55,12 +55,20 @@ classDiagram
         +map_file: str
         +run()
     }
+    class MapData {
+        +nb_drones: int
+        +start_hub: Hub
+        +end_hub: Hub
+        +hubs: dict
+        +connections: list
+    }
     class Parser {
         +nb_drones: int
         +start_hub: Hub
         +end_hub: Hub
         +hubs: dict
         +connections: list
+        +seen_connections: set
         +starter_parsing(file)
     }
     class Hub {
@@ -80,7 +88,6 @@ classDiagram
         +hubs: dict
         +neighbors: dict
         +edges: dict
-        +create_graph()
         +get_neighbor()
         +get_connection()
     }
@@ -100,10 +107,12 @@ classDiagram
     class Simulation {
         +paths: dict
         +end_zone: str
+        +hubs: dict
         +run()
     }
 
     FlyInApp --> Parser
+    Parser --> MapData
     FlyInApp --> GraphNetwork
     FlyInApp --> PathFinder
     FlyInApp --> Simulation
@@ -126,7 +135,8 @@ classDiagram
 - **`Hub`**: one zone on the map (name, position, type, capacity, color).
 - **`Connection`**: bidirectional link between two hubs with optional
   `max_link_capacity`.
-- **`Parser`**: reads the file line by line and fills its public fields.
+- **`MapData`**: dataclass containing all parsed data from a map file.
+- **`Parser`**: reads the file line by line (stripping inline comments) and fills its public fields, returning a `MapData` object.
 
 ### Input format handled
 
