@@ -1,9 +1,13 @@
+from __future__ import annotations
+
 import heapq
+
 from graph import GraphNetwork
 from parser import Hub
 from reservation import ReservationTable
 
 PathStep = tuple[str, int]
+# Heap layout: (turn, zone_priority, current_zone, path_history)
 HeapItem = tuple[int, int, str, list[PathStep]]
 
 ZONE_PRIO: dict[str, int] = {
@@ -23,30 +27,32 @@ class PathFinder:
         self.can_reach: set[str] = set()
 
     def _mark_reachable(self, end: str) -> None:
-        """Mark all hubs that can be reached from the start node moving forward."""
+        """Mark all hubs that can reach the end."""
         self.can_reach.clear()
         stack = [end]
+
         while stack:
-            current = stack.pop()
-            if current in self.can_reach:
+            zone = stack.pop()
+            if zone in self.can_reach:
                 continue
-            self.can_reach.add(current)
-            for neighbor in self.graph.get_neighbor(current):
+
+            self.can_reach.add(zone)
+            for neighbor in self.graph.get_neighbor(zone):
                 stack.append(neighbor.name)
 
     def _neighbors(self, zone: str) -> list[Hub]:
-        """Return reachable neighbors heading toward the end."""
-        sort_neigh = [
+        """Return reachable neighbors heading toward the end, explicitly sorted by priority."""
+        new = [
             hub for hub in self.graph.get_neighbor(zone)
             if hub.name in self.can_reach
         ]
-        return sorted(sort_neigh, key=lambda k: ZONE_PRIO.get(k.zone, 1))
+        return sorted(new, key=lambda h: ZONE_PRIO.get(h.zone, 1))
 
     def _zone_free(
         self,
+        zone: str,
         turn: int,
         start: str,
-        zone: str,
         end: str,
     ) -> bool:
         """Return True if a zone has room at a turn."""
@@ -83,58 +89,60 @@ class PathFinder:
         if self.graph.hubs[dst].zone == "restricted":
             if not self._link_free(src, dst, turn + 2):
                 return False
-            if not self._zone_free(turn + 2, start, dst, end):
+            if not self._zone_free(dst, turn + 2, start, end):
                 return False
         else:
-            if not self._zone_free(turn + 1, start, dst, end):
+            if not self._zone_free(dst, turn + 1, start, end):
                 return False
 
         return True
 
     def find_path(self, start: str, end: str) -> list[PathStep]:
-        """Find the shortest path for one drone using Dijkstra's algorithm."""
+        """Find the shortest path for one drone."""
         if not self.can_reach:
             self._mark_reachable(end)
 
         if start not in self.can_reach:
             return []
 
-        max_turn = self.table.max_turn
-        max_turn += len(self.graph.hubs) * 4
-        heap: list[HeapItem] = [(0, 0, start, [(start, 0)])]
-        best_cost: dict[tuple[str, int], int] = {}
+        max_turn = self.table.max_turn + len(self.graph.hubs) * 4
+        start_prio = ZONE_PRIO.get(self.graph.hubs[start].zone, 1)
+        
+        heap: list[tuple[int, int, int, str, list[PathStep]]] = [(0, 0, start_prio, start, [(start, 0)])]
+        seen: set[tuple[str, int]] = set()
+
         while heap:
-            cost, turn, zone, path = heapq.heappop(heap)
-            if turn > max_turn:
-                continue
+            turn, acc_prio, _, zone, path = heapq.heappop(heap)
             if zone == end:
                 return path
 
             state = (zone, turn)
-            if state in best_cost and best_cost[state] <= cost:
+            if state in seen:
                 continue
-            best_cost[state] = cost
-
+            seen.add(state)
             for neighbor in self._neighbors(zone):
                 dst = neighbor.name
+
                 if not self._can_move(zone, dst, turn, start, end):
                     continue
                 steps = self._move_steps(zone, dst, turn)
-                next_turn = steps[-1][1]
-                current_cost = ZONE_PRIO.get(neighbor.zone, 1)
-                new_cost = cost + current_cost
+                move_arrival_turn = steps[-1][1]
+                if move_arrival_turn > max_turn:
+                    continue
+
+                prio = ZONE_PRIO.get(neighbor.zone, 1)
+                next_acc_prio = acc_prio + prio
                 heapq.heappush(
                     heap,
-                    (new_cost, next_turn, dst, path + steps),
+                    (move_arrival_turn, next_acc_prio, prio, dst, path + steps),
                 )
-            if (turn + 1 <= max_turn
-                 and self._zone_free(
-                 turn + 1, start, zone, end)):
-                current_zone_type = self.graph.hubs[zone].zone
-                idle_cost = ZONE_PRIO.get(current_zone_type, 1)
+            wait_turn = turn + 1
+            if wait_turn <= max_turn and self._zone_free(zone, wait_turn, start, end):
+                current_prio = ZONE_PRIO.get(self.graph.hubs[zone].zone, 1)
+                
                 heapq.heappush(
                     heap,
-                    (idle_cost + cost, turn + 1, zone, path + [(zone, turn + 1)]),
+                    (wait_turn, acc_prio + 1, current_prio, zone, path + [(zone, wait_turn)]),
                 )
 
         return []
