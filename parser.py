@@ -43,6 +43,7 @@ class Connection:
 @dataclass
 class MapData:
     """Contains all parsed data from a map file."""
+
     nb_drones: int
     start_hub: Hub
     end_hub: Hub
@@ -96,13 +97,12 @@ class Parser:
 
     def _parse_metadata(self, attr: str, i: int) -> Dict[str, Any]:
         """Parse hub metadata inside [brackets]."""
-        data: Dict[str, Any] = {
-            "zone": "normal",
-            "color": "none",
-            "max_drones": 1,
-        }
+        zone: Optional[str] = None
+        color: Optional[str] = None
+        max_drones: Optional[int] = None
+
         if not attr:
-            return data
+            return {"zone": "normal", "color": "none", "max_drones": 1}
 
         for part in attr.split():
             if "=" not in part:
@@ -112,42 +112,49 @@ class Parser:
 
             key, val = part.split("=", 1)
             if key == "max_drones":
+                if max_drones is not None:
+                    raise ValueError(f"Line {i}: Duplicate max_drones parameter")
                 try:
                     nb = int(val)
                     if nb <= 0:
                         raise ValueError()
-                    data[key] = nb
+                    max_drones = nb
                 except ValueError:
                     raise ValueError(
                         f"Line {i}: max_drones must be positive"
                     )
             elif key == "zone":
+                if zone is not None:
+                    raise ValueError(f"Line {i}: Duplicate zone parameter")
                 if val not in self.VALID_ZONES:
                     raise ValueError(
                         f"Line {i}: Invalid zone type '{val}'"
                     )
-                data[key] = val
+                zone = val
             elif key == "color":
-                data[key] = val
+                if color is not None:
+                    raise ValueError(f"Line {i}: Duplicate color configuration")
+                
+                if not val or val.lower() == "none" or len(val.split()) > 1:
+                    raise ValueError(
+                        f"Line {i}: Color must be a single non-empty word and cannot be None"
+                    )
+                color = val
             else:
                 raise ValueError(
                     f"Line {i}: Unknown metadata key '{key}'"
                 )
 
-        return data
+        return {
+            "zone": zone if zone is not None else "normal",
+            "color": color if color is not None else "none",
+            "max_drones": max_drones if max_drones is not None else 1,
+        }
 
     def _extract_brackets(
         self, data: str, i: int
     ) -> tuple[str, str]:
-        """Split data into content before brackets and metadata.
-
-        Returns:
-            A tuple of (data_without_brackets, metadata_string).
-
-        Raises:
-            ValueError: If brackets are malformed or trailing text
-                exists after the closing bracket.
-        """
+        """Split data into content before brackets and metadata."""
         open_b = data.find("[")
         close_b = data.find("]")
 
@@ -166,13 +173,14 @@ class Parser:
                 f"Line {i}: ']' appears before '['"
             )
 
+        attr = data[open_b + 1:close_b].strip()
+
         trailing = data[close_b + 1:].strip()
         if trailing:
             raise ValueError(
                 f"Line {i}: Unexpected text after ']'"
             )
 
-        attr = data[open_b + 1:close_b]
         body = data[:open_b].strip()
         return body, attr
 
@@ -209,6 +217,7 @@ class Parser:
         """Parse one connection line into a Connection object."""
         data, attr = self._extract_brackets(data, i)
         cap = 1
+        max_link_seen = False
 
         parts = data.split("-")
         if len(parts) != 2:
@@ -240,8 +249,7 @@ class Parser:
         key = "-".join(sorted([from_hub, to_hub]))
         if key in self.seen_connections:
             raise ValueError(
-                f"Line {i}: Duplicate connection "
-                f"'{from_hub}-{to_hub}'"
+                f"Line {i}: Duplicate connection '{from_hub}-{to_hub}'"
             )
         self.seen_connections.add(key)
 
@@ -253,6 +261,9 @@ class Parser:
                     )
                 k, v = part.split("=", 1)
                 if k == "max_link_capacity":
+                    if max_link_seen:
+                        raise ValueError(f"Line {i}: Duplicate max_link_capacity parameter")
+                    max_link_seen = True
                     try:
                         nb = int(v)
                         if nb <= 0:
@@ -260,8 +271,7 @@ class Parser:
                         cap = nb
                     except ValueError:
                         raise ValueError(
-                            f"Line {i}: max_link_capacity must be "
-                            f"positive"
+                            f"Line {i}: max_link_capacity must be positive"
                         )
                 else:
                     raise ValueError(
@@ -272,10 +282,7 @@ class Parser:
 
     @staticmethod
     def _strip_inline_comment(line: str) -> str:
-        """Remove an inline comment starting with '#'.
-
-        Brackets are respected: '#' inside [...] is kept.
-        """
+        """Remove an inline comment starting with '#'."""
         in_bracket = False
         for idx, ch in enumerate(line):
             if ch == "[":
@@ -328,8 +335,7 @@ class Parser:
                     hub = self.hub_parse(data, line_num)
                     if hub.name in self.hubs:
                         raise ValueError(
-                            f"Line {line_num}: Hub "
-                            f"'{hub.name}' already exists"
+                            f"Line {line_num}: Hub '{hub.name}' already exists"
                         )
                     self.hubs[hub.name] = hub
 
@@ -352,8 +358,7 @@ class Parser:
                     )
                 elif prefix == "nb_drones":
                     raise ValueError(
-                        f"Line {line_num}: Duplicate nb_drones "
-                        f"definition"
+                        f"Line {line_num}: Duplicate nb_drones definition"
                     )
                 else:
                     raise ValueError(
@@ -370,6 +375,17 @@ class Parser:
             raise ValueError("Missing start_hub")
         if self.end_hub is None:
             raise ValueError("Missing end_hub")
+
+        hub_list = list(self.hubs.values())
+        for idx_a in range(len(hub_list)):
+            for idx_b in range(idx_a + 1, len(hub_list)):
+                hub_a = hub_list[idx_a]
+                hub_b = hub_list[idx_b]
+                if hub_a.x == hub_b.x and hub_a.y == hub_b.y:
+                    raise ValueError(
+                        f"Coordinate Conflict Error: Hub '{hub_a.name}' and Hub '{hub_b.name}' "
+                        f"share the exact same coordinate space position ({hub_a.x}, {hub_a.y})."
+                    )
 
         return MapData(
             nb_drones=self.nb_drones,

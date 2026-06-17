@@ -1,7 +1,4 @@
-from __future__ import annotations
-
 import heapq
-
 from graph import GraphNetwork
 from parser import Hub
 from reservation import ReservationTable
@@ -26,31 +23,30 @@ class PathFinder:
         self.can_reach: set[str] = set()
 
     def _mark_reachable(self, end: str) -> None:
-        """Mark all hubs that can reach the end."""
+        """Mark all hubs that can be reached from the start node moving forward."""
         self.can_reach.clear()
         stack = [end]
-
         while stack:
-            zone = stack.pop()
-            if zone in self.can_reach:
+            current = stack.pop()
+            if current in self.can_reach:
                 continue
-
-            self.can_reach.add(zone)
-            for neighbor in self.graph.get_neighbor(zone):
+            self.can_reach.add(current)
+            for neighbor in self.graph.get_neighbor(current):
                 stack.append(neighbor.name)
 
     def _neighbors(self, zone: str) -> list[Hub]:
         """Return reachable neighbors heading toward the end."""
-        return [
+        sort_neigh = [
             hub for hub in self.graph.get_neighbor(zone)
             if hub.name in self.can_reach
         ]
+        return sorted(sort_neigh, key=lambda k: ZONE_PRIO.get(k.zone, 1))
 
     def _zone_free(
         self,
-        zone: str,
         turn: int,
         start: str,
+        zone: str,
         end: str,
     ) -> bool:
         """Return True if a zone has room at a turn."""
@@ -87,10 +83,10 @@ class PathFinder:
         if self.graph.hubs[dst].zone == "restricted":
             if not self._link_free(src, dst, turn + 2):
                 return False
-            if not self._zone_free(dst, turn + 2, start, end):
+            if not self._zone_free(turn + 2, start, dst, end):
                 return False
         else:
-            if not self._zone_free(dst, turn + 1, start, end):
+            if not self._zone_free(turn + 1, start, dst, end):
                 return False
 
         return True
@@ -105,41 +101,40 @@ class PathFinder:
 
         max_turn = self.table.max_turn
         max_turn += len(self.graph.hubs) * 4
-        start_prio = ZONE_PRIO.get(self.graph.hubs[start].zone, 1)
-        heap: list[HeapItem] = [(0, start_prio, start, [(start, 0)])]
-        seen: set[tuple[str, int]] = set()
-
+        heap: list[HeapItem] = [(0, 0, start, [(start, 0)])]
+        best_cost: dict[tuple[str, int], int] = {}
         while heap:
-            turn, _, zone, path = heapq.heappop(heap)
-
+            cost, turn, zone, path = heapq.heappop(heap)
+            if turn > max_turn:
+                continue
             if zone == end:
                 return path
 
             state = (zone, turn)
-            if state in seen:
+            if state in best_cost and best_cost[state] <= cost:
                 continue
-            seen.add(state)
+            best_cost[state] = cost
 
             for neighbor in self._neighbors(zone):
                 dst = neighbor.name
-
                 if not self._can_move(zone, dst, turn, start, end):
                     continue
-
                 steps = self._move_steps(zone, dst, turn)
                 next_turn = steps[-1][1]
-                prio = ZONE_PRIO.get(neighbor.zone, 1)
-
+                current_cost = ZONE_PRIO.get(neighbor.zone, 1)
+                new_cost = cost + current_cost
                 heapq.heappush(
                     heap,
-                    (next_turn, prio, dst, path + steps),
+                    (new_cost, next_turn, dst, path + steps),
                 )
-            if turn + 1 <= max_turn and self._zone_free(
-                    zone, turn + 1, start, end):
-                prio = ZONE_PRIO.get(self.graph.hubs[zone].zone, 1)
+            if (turn + 1 <= max_turn
+                 and self._zone_free(
+                 turn + 1, start, zone, end)):
+                current_zone_type = self.graph.hubs[zone].zone
+                idle_cost = ZONE_PRIO.get(current_zone_type, 1)
                 heapq.heappush(
                     heap,
-                    (turn + 1, prio, zone, path + [(zone, turn + 1)]),
+                    (idle_cost + cost, turn + 1, zone, path + [(zone, turn + 1)]),
                 )
 
         return []
