@@ -1,20 +1,29 @@
 """Print drone moves turn by turn."""
-from __future__ import annotations
-import webcolors
 from parser import Hub
 
 PathStep = tuple[str, int]
 
-RAINBOW = [
-    "\033[38;5;197m",
-    "\033[38;5;46m",
-    "\033[38;5;226m",
-    "\033[38;5;51m",
-    "\033[38;5;135m",
-    "\033[38;5;208m",
-]
 RESET = "\033[0m"
-
+COLORS ={
+        "BLACK":"\033[30m",
+        "RED":"\033[91m",
+        "WHITE":"\033[97m",
+        "GOLD":"\033[38;5;220m",
+        "MAGENTA":"\033[95m",
+        "CYAN":"\033[96m",
+        "DARKRED":"\033[38;5;88m",
+        "CRIMSON":"\033[38;2;220;20;60m",
+        "LIME":"\033[38;5;118m",
+        "BLUE":"\033[94m",
+        "BROWN":"\033[38;5;94m",
+        "MAROON":"\033[38;2;192;128;129m",
+        "GREEN":"\033[92m",
+        "YELLOW":"\033[93m",
+        "ORANGE":"\033[38;5;208m",
+        "PURPLE":"\033[38;5;93m",
+        "DEFAULT":"\033[0m",
+        "VIOLET":"\033[38;5;177m",
+   }
 
 class Simulation:
     """Replay computed paths and print visible drone moves."""
@@ -47,33 +56,17 @@ class Simulation:
         if color.lower() in ("", "none", "normal"):
             return ""
 
-        try:
-            rgb = webcolors.name_to_rgb(color.lower())
-        except ValueError:
-            return ""
-
-        return f"\033[38;2;{rgb.red};{rgb.green};{rgb.blue}m"
-
-    def _rainbow(self, text: str, drone_id: int) -> str:
-        """Apply rainbow colors to text."""
-        result = ""
-        for index, char in enumerate(text):
-            color = RAINBOW[(drone_id + index) % len(RAINBOW)]
-            result += f"{color}{char}{RESET}"
-        return result
+        return COLORS.get(color.upper(), "")
 
     def _format(self, drone_id: int, move: str) -> str:
         """Build one printable drone move."""
-        text = f"D{drone_id}-{move}"
+        text = f"{move}"
         color = self._move_color(move)
-
-        if color.lower() == "rainbow":
-            return self._rainbow(text, drone_id)
 
         ansi = self._ansi_color(color)
         if ansi:
-            return f"{ansi}{text}{RESET}"
-        return text
+            return f"D{drone_id}-{ansi}{text}{RESET}"
+        return f"D{drone_id}-{text}"
 
     def _moves_at_turn(
         self,

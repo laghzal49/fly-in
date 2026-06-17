@@ -26,7 +26,7 @@ help:
 install:
 	python3 -m venv .venv
 	$(PIP) install --upgrade pip
-	$(PIP) install webcolors
+
 
 run:
 	$(PYTHON) main.py $(MAP)
