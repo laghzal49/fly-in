@@ -20,29 +20,25 @@ class FlyInApp:
         """Parse input, build graph, route drones, print moves."""
         parser = Parser()
         try:
-            parser.starter_parsing(self.map_file)
+            map_data = parser.starter_parsing(self.map_file)
         except Exception as err:
             print(f"Error: {err}", file=sys.stderr)
             sys.exit(1)
 
-        if parser.start_hub is None or parser.end_hub is None:
-            print("Error: Missing start or end hub", file=sys.stderr)
-            sys.exit(1)
-
-        graph = GraphNetwork(parser.hubs, parser.connections)
+        graph = GraphNetwork(map_data.hubs, map_data.connections)
         table = ReservationTable()
         finder = PathFinder(graph, table)
         try:
             paths = finder.assign_all_paths(
-                parser.start_hub.name,
-                parser.end_hub.name,
-                parser.nb_drones,
+                map_data.start_hub.name,
+                map_data.end_hub.name,
+                map_data.nb_drones,
             )
         except ValueError as err:
             print(f"Error: {err}", file=sys.stderr)
             sys.exit(1)
 
-        sim = Simulation(paths, parser.end_hub.name, parser.hubs)
+        sim = Simulation(paths, map_data.end_hub.name, map_data.hubs)
         sim.run()
 
 
