@@ -23,6 +23,23 @@ class Hub:
         self.zone = zone
         self.max_drones = max_drones
         self.color = color
+        self.reservations: Dict[int, int] = {}
+
+    def reserve(self, turn: int) -> None:
+        """Reserve one drone slot at this hub for the given turn."""
+        self.reservations[turn] = self.reservations.get(turn, 0) + 1
+
+    def usage(self, turn: int) -> int:
+        """Return how many drones occupy this hub at a turn."""
+        return self.reservations.get(turn, 0)
+
+    def is_reserved(self, turn: int) -> bool:
+        """Return True if at least one drone is reserved at this turn."""
+        return self.reservations.get(turn, 0) > 0
+
+    def is_available(self, turn: int) -> bool:
+        """Return True if this hub has room at the given turn."""
+        return self.usage(turn) < self.max_drones
 
 
 class Connection:
@@ -38,6 +55,23 @@ class Connection:
         self.from_hub = from_hub
         self.to_hub = to_hub
         self.max_link_capacity = max_link_capacity
+        self.reservations: Dict[int, int] = {}
+
+    def reserve(self, turn: int) -> None:
+        """Reserve one drone slot on this link for the given turn."""
+        self.reservations[turn] = self.reservations.get(turn, 0) + 1
+
+    def usage(self, turn: int) -> int:
+        """Return how many drones are using this link at the given turn."""
+        return self.reservations.get(turn, 0)
+
+    def is_reserved(self, turn: int) -> bool:
+        """True if at least one drone uses this link at turn."""
+        return self.reservations.get(turn, 0) > 0
+
+    def is_available(self, turn: int) -> bool:
+        """Return True if this link has room at the given turn."""
+        return self.usage(turn) < self.max_link_capacity
 
 
 @dataclass
@@ -67,13 +101,8 @@ class Parser:
 
     def open_file(self, file: str) -> List[str]:
         """Read all lines from a map file."""
-        try:
-            with open(file, "r") as f:
-                return f.readlines()
-        except FileNotFoundError:
-            raise FileNotFoundError(f"File {file} not found.")
-        except Exception as e:
-            raise Exception(f"Error opening file: {e}")
+        with open(file, "r") as f:
+            return f.readlines()
 
     def parse_nb_drone(self, line: str, i: int) -> None:
         """Read the nb_drones value from one line."""
@@ -113,7 +142,9 @@ class Parser:
             key, val = part.split("=", 1)
             if key == "max_drones":
                 if max_drones is not None:
-                    raise ValueError(f"Line {i}: Duplicate max_drones parameter")
+                    raise ValueError(
+                        f"Line {i}: Duplicate max_drones"
+                    )
                 try:
                     nb = int(val)
                     if nb <= 0:
@@ -133,11 +164,19 @@ class Parser:
                 zone = val
             elif key == "color":
                 if color is not None:
-                    raise ValueError(f"Line {i}: Duplicate color configuration")
-                
-                if not val or val.lower() == "none" or len(val.split()) > 1:
                     raise ValueError(
-                        f"Line {i}: Color must be a single non-empty word and cannot be None"
+                        f"Line {i}: Duplicate color"
+                    )
+
+                if (
+                    not val
+                    or val.lower() == "none"
+                    or "=" in val
+                    or len(val.split()) > 1
+                ):
+                    raise ValueError(
+                        f"Line {i}: Color must be a"
+                        f" single non-empty word"
                     )
                 color = val
             else:
@@ -262,7 +301,10 @@ class Parser:
                 k, v = part.split("=", 1)
                 if k == "max_link_capacity":
                     if max_link_seen:
-                        raise ValueError(f"Line {i}: Duplicate max_link_capacity parameter")
+                        raise ValueError(
+                            f"Line {i}: Duplicate"
+                            f" max_link_capacity"
+                        )
                     max_link_seen = True
                     try:
                         nb = int(v)
@@ -315,11 +357,8 @@ class Parser:
                     raise ValueError(
                         f"Line {line_num}: Expected 'nb_drones:' first"
                     )
-                try:
-                    self.parse_nb_drone(line, line_num)
-                    got_drones = True
-                except ValueError as e:
-                    raise ValueError(e)
+                self.parse_nb_drone(line, line_num)
+                got_drones = True
                 line_num += 1
                 continue
 
@@ -330,42 +369,39 @@ class Parser:
             prefix = prefix.strip()
             data = data.strip()
 
-            try:
-                if prefix in ("start_hub", "end_hub", "hub"):
-                    hub = self.hub_parse(data, line_num)
-                    if hub.name in self.hubs:
+            if prefix in ("start_hub", "end_hub", "hub"):
+                hub = self.hub_parse(data, line_num)
+                if hub.name in self.hubs:
+                    raise ValueError(
+                        f"Line {line_num}: Hub '{hub.name}' already exists"
+                    )
+                self.hubs[hub.name] = hub
+
+                if prefix == "start_hub":
+                    if self.start_hub is not None:
                         raise ValueError(
-                            f"Line {line_num}: Hub '{hub.name}' already exists"
+                            f"Line {line_num}: Duplicate start_hub"
                         )
-                    self.hubs[hub.name] = hub
+                    self.start_hub = hub
+                elif prefix == "end_hub":
+                    if self.end_hub is not None:
+                        raise ValueError(
+                            f"Line {line_num}: Duplicate end_hub"
+                        )
+                    self.end_hub = hub
 
-                    if prefix == "start_hub":
-                        if self.start_hub is not None:
-                            raise ValueError(
-                                f"Line {line_num}: Duplicate start_hub"
-                            )
-                        self.start_hub = hub
-                    elif prefix == "end_hub":
-                        if self.end_hub is not None:
-                            raise ValueError(
-                                f"Line {line_num}: Duplicate end_hub"
-                            )
-                        self.end_hub = hub
-
-                elif prefix == "connection":
-                    self.connections.append(
-                        self.connection_parsing(data, line_num)
-                    )
-                elif prefix == "nb_drones":
-                    raise ValueError(
-                        f"Line {line_num}: Duplicate nb_drones definition"
-                    )
-                else:
-                    raise ValueError(
-                        f"Line {line_num}: Unknown prefix '{prefix}'"
-                    )
-            except ValueError as e:
-                raise ValueError(e)
+            elif prefix == "connection":
+                self.connections.append(
+                    self.connection_parsing(data, line_num)
+                )
+            elif prefix == "nb_drones":
+                raise ValueError(
+                    f"Line {line_num}: Duplicate nb_drones definition"
+                )
+            else:
+                raise ValueError(
+                    f"Line {line_num}: Unknown prefix '{prefix}'"
+                )
 
             line_num += 1
 
@@ -383,8 +419,11 @@ class Parser:
                 hub_b = hub_list[idx_b]
                 if hub_a.x == hub_b.x and hub_a.y == hub_b.y:
                     raise ValueError(
-                        f"Coordinate Conflict Error: Hub '{hub_a.name}' and Hub '{hub_b.name}' "
-                        f"share the exact same coordinate space position ({hub_a.x}, {hub_a.y})."
+                        f"Coordinate Conflict Error:"
+                        f" Hub '{hub_a.name}' and"
+                        f" Hub '{hub_b.name}' share"
+                        f" position"
+                        f" ({hub_a.x}, {hub_a.y})."
                     )
 
         return MapData(

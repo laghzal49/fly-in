@@ -12,4 +12,3 @@ connection: start-way2
 connection: way2-way3
 connection: way1-goal
 connection: way3-goal
-

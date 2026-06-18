@@ -5,19 +5,18 @@ import sys
 from algo import PathFinder
 from graph import GraphNetwork
 from parser import Parser
-from reservation import ReservationTable
 from simulation import Simulation
 
 
 class FlyInApp:
-    """Runs the full program: parse map, find paths, simulate."""
+    """Parse map, find paths, simulate."""
 
     def __init__(self, map_file: str) -> None:
         """Store the map file path."""
-        self.map_file: str = map_file
+        self.map_file = map_file
 
     def run(self) -> None:
-        """Parse input, build graph, route drones, print moves."""
+        """Parse input, build graph, route drones, print."""
         parser = Parser()
         try:
             map_data = parser.starter_parsing(self.map_file)
@@ -25,11 +24,12 @@ class FlyInApp:
             print(f"Error: {err}", file=sys.stderr)
             sys.exit(1)
 
-        graph = GraphNetwork(map_data.hubs, map_data.connections)
-        table = ReservationTable()
-        finder = PathFinder(graph, table)
+        graph = GraphNetwork(
+            map_data.hubs, map_data.connections,
+        )
+        finder = PathFinder(graph)
         try:
-            paths = finder.assign_all_paths(
+            drones = finder.assign_all_paths(
                 map_data.start_hub.name,
                 map_data.end_hub.name,
                 map_data.nb_drones,
@@ -38,14 +38,18 @@ class FlyInApp:
             print(f"Error: {err}", file=sys.stderr)
             sys.exit(1)
 
-        sim = Simulation(paths, map_data.end_hub.name, map_data.hubs)
-        sim.run()
+        Simulation(
+            drones, map_data.end_hub.name, map_data.hubs,
+        ).run()
 
 
 def main() -> None:
     """Check arguments and start the application."""
     if len(sys.argv) != 2:
-        print("Usage: python3 main.py <map_file>", file=sys.stderr)
+        print(
+            "Usage: python3 main.py <map_file>",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     FlyInApp(sys.argv[1]).run()

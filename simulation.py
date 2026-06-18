@@ -1,72 +1,73 @@
 """Print drone moves turn by turn."""
+from __future__ import annotations
+
+from drone import Drone, MoveStep
 from parser import Hub
 
-PathStep = tuple[str, int]
-
 RESET = "\033[0m"
-COLORS ={
-        "BLACK":"\033[30m",
-        "RED":"\033[91m",
-        "WHITE":"\033[97m",
-        "GOLD":"\033[38;5;220m",
-        "MAGENTA":"\033[95m",
-        "CYAN":"\033[96m",
-        "DARKRED":"\033[38;5;88m",
-        "CRIMSON":"\033[38;2;220;20;60m",
-        "LIME":"\033[38;5;118m",
-        "BLUE":"\033[94m",
-        "BROWN":"\033[38;5;94m",
-        "MAROON":"\033[38;2;192;128;129m",
-        "GREEN":"\033[92m",
-        "YELLOW":"\033[93m",
-        "ORANGE":"\033[38;5;208m",
-        "PURPLE":"\033[38;5;93m",
-        "DEFAULT":"\033[0m",
-        "VIOLET":"\033[38;5;177m",
-   }
+COLORS = {
+    "BLACK": "\033[30m",
+    "RED": "\033[91m",
+    "WHITE": "\033[97m",
+    "GOLD": "\033[38;5;220m",
+    "MAGENTA": "\033[95m",
+    "CYAN": "\033[96m",
+    "DARKRED": "\033[38;5;88m",
+    "CRIMSON": "\033[38;2;220;20;60m",
+    "LIME": "\033[38;5;118m",
+    "BLUE": "\033[94m",
+    "BROWN": "\033[38;5;94m",
+    "MAROON": "\033[38;2;192;128;129m",
+    "GREEN": "\033[92m",
+    "YELLOW": "\033[93m",
+    "ORANGE": "\033[38;5;208m",
+    "PURPLE": "\033[38;5;93m",
+    "DEFAULT": "\033[0m",
+    "VIOLET": "\033[38;5;177m",
+}
+
 
 class Simulation:
     """Replay computed paths and print visible drone moves."""
 
     def __init__(
         self,
-        paths: dict[int, list[PathStep]],
+        drones: list[Drone],
         end_zone: str,
         hubs: dict[str, Hub],
     ) -> None:
-        """Store paths, end zone, and hub metadata."""
-        self.paths: dict[int, list[PathStep]] = paths
-        self.end_zone: str = end_zone
-        self.hubs: dict[str, Hub] = hubs
+        """Store drones, end zone, and hub metadata."""
+        self.drones = drones
+        self.end_zone = end_zone
+        self.hubs = hubs
 
     def _last_turn(self) -> int:
-        """Return the last turn used by any path."""
-        if not self.paths:
+        """Return the last turn used by any drone."""
+        if not self.drones:
             return 0
-        return max(path[-1][1] for path in self.paths.values() if path)
+        return max(d.last_turn for d in self.drones)
 
-    def _move_color(self, move: str) -> str:
-        """Return the color configured for a zone or link move."""
-        zone = move.split("-", 1)[1] if "-" in move else move
-        hub = self.hubs.get(zone)
-        return hub.color if hub else "none"
-
-    def _ansi_color(self, color: str) -> str:
-        """Convert a color name to ANSI, or empty string if invalid."""
-        if color.lower() in ("", "none", "normal"):
+    def _color_for(self, step: MoveStep) -> str:
+        """Return the ANSI color for a step, or empty."""
+        zone = step.dst if step.is_link else step.zone
+        hub = self.hubs.get(zone) if zone else None
+        color = hub.color if hub else "none"
+        skip = ("", "none", "normal")
+        if color.lower() in skip:
             return ""
-
         return COLORS.get(color.upper(), "")
 
-    def _format(self, drone_id: int, move: str) -> str:
+    def _format(
+        self, drone: Drone, step: MoveStep,
+    ) -> str:
         """Build one printable drone move."""
-        text = f"{move}"
-        color = self._move_color(move)
-
-        ansi = self._ansi_color(color)
+        ansi = self._color_for(step)
         if ansi:
-            return f"D{drone_id}-{ansi}{text}{RESET}"
-        return f"D{drone_id}-{text}"
+            return (
+                f"{drone.name}-"
+                f"{ansi}{step.label}{RESET}"
+            )
+        return f"{drone.name}-{step.label}"
 
     def _moves_at_turn(
         self,
@@ -74,25 +75,32 @@ class Simulation:
         last_move: dict[int, str],
         delivered: set[int],
     ) -> list[str]:
-        """Return all printable moves for one turn."""
+        """Collect all printable moves for one turn."""
         moves: list[str] = []
 
-        for drone_id, path in self.paths.items():
-            if drone_id in delivered:
+        for drone in self.drones:
+            if drone.drone_id in delivered:
                 continue
 
-            for move, move_turn in path:
-                if move_turn != turn:
+            for step in drone.path:
+                if step.turn != turn:
                     continue
 
-                if move == last_move.get(drone_id):
+                # Skip if drone hasn't actually moved
+                if step.label == last_move.get(
+                    drone.drone_id,
+                ):
                     break
 
-                last_move[drone_id] = move
-                moves.append(self._format(drone_id, move))
+                last_move[drone.drone_id] = step.label
+                moves.append(self._format(drone, step))
 
-                if move == self.end_zone:
-                    delivered.add(drone_id)
+                # Mark delivered when reaching end
+                if (
+                    not step.is_link
+                    and step.zone == self.end_zone
+                ):
+                    delivered.add(drone.drone_id)
                 break
 
         return moves
@@ -100,16 +108,17 @@ class Simulation:
     def run(self) -> None:
         """Print one output line per turn."""
         last_move = {
-            drone_id: path[0][0]
-            for drone_id, path in self.paths.items()
-            if path
+            d.drone_id: d.path[0].label
+            for d in self.drones if d.path
         }
         delivered: set[int] = set()
 
         for turn in range(1, self._last_turn() + 1):
-            if len(delivered) == len(self.paths):
+            if len(delivered) == len(self.drones):
                 break
 
-            moves = self._moves_at_turn(turn, last_move, delivered)
+            moves = self._moves_at_turn(
+                turn, last_move, delivered,
+            )
             if moves:
                 print(" ".join(moves))

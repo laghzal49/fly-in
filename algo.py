@@ -1,15 +1,13 @@
+"""Pathfinding algorithm for drone routing."""
 from __future__ import annotations
 
 import heapq
 
+from drone import Drone, MoveStep
 from graph import GraphNetwork
 from parser import Hub
-from reservation import ReservationTable
 
-PathStep = tuple[str, int]
-# Heap layout: (turn, zone_priority, current_zone, path_history)
-HeapItem = tuple[int, int, str, list[PathStep]]
-
+# Lower value = higher priority in path search.
 ZONE_PRIO: dict[str, int] = {
     "priority": 0,
     "normal": 1,
@@ -20,164 +18,216 @@ ZONE_PRIO: dict[str, int] = {
 class PathFinder:
     """Find and reserve one valid path per drone."""
 
-    def __init__(self, graph: GraphNetwork, table: ReservationTable) -> None:
-        """Store graph and reservation state."""
-        self.graph: GraphNetwork = graph
-        self.table: ReservationTable = table
+    def __init__(self, graph: GraphNetwork) -> None:
+        """Store graph reference."""
+        self.graph = graph
         self.can_reach: set[str] = set()
+        self._max_turn = 0
+
+    # ── reachability ───────────────────────────────
 
     def _mark_reachable(self, end: str) -> None:
         """Mark all hubs that can reach the end."""
         self.can_reach.clear()
         stack = [end]
-
         while stack:
             zone = stack.pop()
             if zone in self.can_reach:
                 continue
-
             self.can_reach.add(zone)
-            for neighbor in self.graph.get_neighbor(zone):
-                stack.append(neighbor.name)
+            for hub in self.graph.get_neighbor(zone):
+                stack.append(hub.name)
 
     def _neighbors(self, zone: str) -> list[Hub]:
-        """Return reachable neighbors heading toward the end, explicitly sorted by priority."""
-        new = [
-            hub for hub in self.graph.get_neighbor(zone)
-            if hub.name in self.can_reach
+        """Reachable neighbors, sorted by priority."""
+        reachable = [
+            h for h in self.graph.get_neighbor(zone)
+            if h.name in self.can_reach
         ]
-        return sorted(new, key=lambda h: ZONE_PRIO.get(h.zone, 1))
+        return sorted(
+            reachable,
+            key=lambda h: ZONE_PRIO.get(h.zone, 1),
+        )
+
+    # ── capacity checks ───────────────────────────
 
     def _zone_free(
-        self,
-        zone: str,
-        turn: int,
-        start: str,
-        end: str,
+        self, zone: str, turn: int,
+        start: str, end: str,
     ) -> bool:
-        """Return True if a zone has room at a turn."""
+        """True if a zone has room at a turn."""
         if zone == start or zone == end:
             return True
+        return self.graph.hubs[zone].is_available(turn)
 
-        hub = self.graph.hubs[zone]
-        return self.table.is_zone_available(zone, turn, hub.max_drones)
-
-    def _link_free(self, src: str, dst: str, turn: int) -> bool:
-        """Return True if a link has room at a turn."""
+    def _link_free(
+        self, src: str, dst: str, turn: int,
+    ) -> bool:
+        """True if a link has room at a turn."""
         conn = self.graph.get_connection(src, dst)
-        cap = conn.max_link_capacity if conn else 1
-        return self.table.is_link_available(src, dst, turn, cap)
-
-    def _move_steps(self, src: str, dst: str, turn: int) -> list[PathStep]:
-        """Build path steps for one move."""
-        if self.graph.hubs[dst].zone == "restricted":
-            return [(f"{src}-{dst}", turn + 1), (dst, turn + 2)]
-        return [(dst, turn + 1)]
+        if conn is None:
+            return True
+        return conn.is_available(turn)
 
     def _can_move(
-        self,
-        src: str,
-        dst: str,
-        turn: int,
-        start: str,
-        end: str,
+        self, src: str, dst: str, turn: int,
+        start: str, end: str,
     ) -> bool:
-        """Check if a move respects zone and link capacity."""
+        """True if move respects all capacity."""
         if not self._link_free(src, dst, turn + 1):
             return False
 
+        hub = self.graph.hubs[dst]
+        if hub.zone == "restricted":
+            return (
+                self._link_free(src, dst, turn + 2)
+                and self._zone_free(
+                    dst, turn + 2, start, end,
+                )
+            )
+        return self._zone_free(
+            dst, turn + 1, start, end,
+        )
+
+    # ── step building ─────────────────────────────
+
+    def _move_steps(
+        self, src: str, dst: str, turn: int,
+    ) -> list[MoveStep]:
+        """Build path steps for one move."""
         if self.graph.hubs[dst].zone == "restricted":
-            if not self._link_free(src, dst, turn + 2):
-                return False
-            if not self._zone_free(dst, turn + 2, start, end):
-                return False
-        else:
-            if not self._zone_free(dst, turn + 1, start, end):
-                return False
+            return [
+                MoveStep.on_link(src, dst, turn + 1),
+                MoveStep.at_zone(dst, turn + 2),
+            ]
+        return [
+            MoveStep.at_zone(
+                dst, turn + 1, via=(src, dst),
+            ),
+        ]
 
-        return True
+    # ── search ────────────────────────────────────
 
-    def find_path(self, start: str, end: str) -> list[PathStep]:
-        """Find the shortest path for one drone."""
+    def find_path(
+        self, start: str, end: str,
+    ) -> list[MoveStep]:
+        """Find shortest path for one drone."""
         if not self.can_reach:
             self._mark_reachable(end)
-
         if start not in self.can_reach:
             return []
 
-        max_turn = self.table.max_turn + len(self.graph.hubs) * 4
-        start_prio = ZONE_PRIO.get(self.graph.hubs[start].zone, 1)
-        
-        heap: list[tuple[int, int, int, str, list[PathStep]]] = [(0, 0, start_prio, start, [(start, 0)])]
+        limit = self._max_turn + len(self.graph.hubs) * 4
+
+        # Heap entries: (turn, cost, prio, zone, path)
+        initial = MoveStep.at_zone(start, 0)
+        start_prio = ZONE_PRIO.get(
+            self.graph.hubs[start].zone, 1,
+        )
+        heap: list[
+            tuple[int, int, int, str, list[MoveStep]]
+        ] = [(0, 0, start_prio, start, [initial])]
         seen: set[tuple[str, int]] = set()
 
         while heap:
-            turn, acc_prio, _, zone, path = heapq.heappop(heap)
+            turn, cost, _, zone, path = heapq.heappop(
+                heap,
+            )
             if zone == end:
                 return path
-
-            state = (zone, turn)
-            if state in seen:
+            if (zone, turn) in seen:
                 continue
-            seen.add(state)
+            seen.add((zone, turn))
+
+            # Try moving to each neighbor
             for neighbor in self._neighbors(zone):
                 dst = neighbor.name
-
-                if not self._can_move(zone, dst, turn, start, end):
+                if not self._can_move(
+                    zone, dst, turn, start, end,
+                ):
                     continue
-                steps = self._move_steps(zone, dst, turn)
-                move_arrival_turn = steps[-1][1]
-                if move_arrival_turn > max_turn:
+                steps = self._move_steps(
+                    zone, dst, turn,
+                )
+                arrival = steps[-1].turn
+                if arrival > limit:
                     continue
+                prio = ZONE_PRIO.get(
+                    neighbor.zone, 1,
+                )
+                heapq.heappush(heap, (
+                    arrival, cost + prio, prio,
+                    dst, path + steps,
+                ))
 
-                prio = ZONE_PRIO.get(neighbor.zone, 1)
-                next_acc_prio = acc_prio + prio
-                heapq.heappush(
-                    heap,
-                    (move_arrival_turn, next_acc_prio, prio, dst, path + steps),
+            # Try waiting one turn
+            wait = turn + 1
+            if wait <= limit and self._zone_free(
+                zone, wait, start, end,
+            ):
+                prio = ZONE_PRIO.get(
+                    self.graph.hubs[zone].zone, 1,
                 )
-            wait_turn = turn + 1
-            if wait_turn <= max_turn and self._zone_free(zone, wait_turn, start, end):
-                current_prio = ZONE_PRIO.get(self.graph.hubs[zone].zone, 1)
-                
-                heapq.heappush(
-                    heap,
-                    (wait_turn, acc_prio + 1, current_prio, zone, path + [(zone, wait_turn)]),
-                )
+                heapq.heappush(heap, (
+                    wait, cost + 1, prio, zone,
+                    path + [
+                        MoveStep.at_zone(zone, wait),
+                    ],
+                ))
 
         return []
 
-    def _reserve(self, path: list[PathStep]) -> None:
-        """Reserve all zones and links used by a path."""
-        for i, (step, turn) in enumerate(path):
-            if "-" in step:
-                src, dst = step.split("-", 1)
-                self.table.reserve_link(src, dst, turn)
-                self.table.reserve_link(src, dst, turn + 1)
-                continue
+    # ── reservation ───────────────────────────────
 
-            self.table.reserve_zone(step, turn)
+    def _reserve(
+        self, path: list[MoveStep],
+    ) -> None:
+        """Reserve all zones and links in a path."""
+        for step in path:
+            if step.is_link:
+                assert step.src and step.dst
+                conn = self.graph.get_connection(
+                    step.src, step.dst,
+                )
+                if conn:
+                    conn.reserve(step.turn)
+                    conn.reserve(step.turn + 1)
+            else:
+                assert step.zone is not None
+                self.graph.hubs[step.zone].reserve(
+                    step.turn,
+                )
+                if step.via:
+                    conn = self.graph.get_connection(
+                        *step.via,
+                    )
+                    if conn:
+                        conn.reserve(step.turn)
 
-            if i > 0:
-                prev_zone, _ = path[i - 1]
-                if "-" not in prev_zone and prev_zone != step:
-                    self.table.reserve_link(prev_zone, step, turn)
+        if path:
+            last = path[-1].turn
+            if last > self._max_turn:
+                self._max_turn = last
+
+    # ── public API ────────────────────────────────
 
     def assign_all_paths(
-        self,
-        start: str,
-        end: str,
-        nb_drones: int,
-    ) -> dict[int, list[PathStep]]:
-        """Find every drone path, reserving each path immediately."""
+        self, start: str, end: str, nb_drones: int,
+    ) -> list[Drone]:
+        """Find and reserve a path for every drone."""
         self._mark_reachable(end)
-        paths: dict[int, list[PathStep]] = {}
+        drones: list[Drone] = []
 
-        for drone in range(1, nb_drones + 1):
+        for drone_id in range(1, nb_drones + 1):
+            drone = Drone(drone_id, start, end)
             path = self.find_path(start, end)
             if not path:
-                raise ValueError(f"No path for drone D{drone}")
+                raise ValueError(
+                    f"No path for drone {drone.name}",
+                )
+            drone.path = path
             self._reserve(path)
-            paths[drone] = path
+            drone.reserved = True
+            drones.append(drone)
 
-        return paths
+        return drones

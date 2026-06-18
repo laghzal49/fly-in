@@ -1,4 +1,4 @@
-_This project has been created as part of the 42 curriculum by tlaghzal._
+*This project has been created as part of the 42 curriculum by tlaghzal.*
 
 # Fly-in: Drone Routing System
 
@@ -24,7 +24,7 @@ The goal is to deliver all drones in as few turns as possible while respecting:
 make install
 ```
 
-Creates a virtual environment and installs `webcolors` for terminal colors.
+Creates a virtual environment and installs dependencies.
 
 ### Running the simulator
 
@@ -39,16 +39,25 @@ Or directly:
 .venv/bin/python main.py maps/easy/01_linear_path.txt
 ```
 
+### Capacity info mode
+
+```bash
+.venv/bin/python main.py --capacity-info maps/easy/01_linear_path.txt
+```
+
+Prints zone and connection usage per turn alongside the normal simulation
+output. Example:
+
+```
+D1-way2 D2-start-way1
+  Zone start: 1/1 drones
+  Connection start-way1: 1/1 capacity used
+```
+
 ### Debugging
 
 ```bash
 make debug map=maps/medium/01_dead_end_trap.txt
-```
-
-### Check output (collision test)
-
-```bash
-make check map=maps/hard/02_capacity_hell.txt
 ```
 
 ### Code quality
@@ -68,17 +77,16 @@ make clean
 
 ```
 .
-├── main.py           # FlyInApp entry point
-├── parser.py         # Hub, Connection, Parser
-├── graph.py          # GraphNetwork
+├── main.py           # FlyInApp entry point + CLI parsing
+├── parser.py         # Hub, Connection, MapData, Parser
+├── graph.py          # GraphNetwork (adjacency + edges)
+├── drone.py          # Drone and MoveStep classes
 ├── algo.py           # PathFinder (space-time search)
-├── reservation.py    # ReservationTable
 ├── simulation.py     # Colored turn-by-turn output
-├── check_output.py   # OutputChecker (collision test)
 ├── Makefile
 ├── setup.cfg         # flake8 config
 ├── mypy.ini          # mypy config
-└── maps/             # Test maps
+└── maps/             # Test maps (easy, medium, hard, challenger)
 ```
 
 ## Algorithm design
@@ -92,55 +100,66 @@ The routing pipeline has four steps:
 3. **Route** each drone with a space-time search (`PathFinder`)
 4. **Print** the simulation turn by turn (`Simulation`)
 
+### Object-oriented architecture
+
+Each entity manages its own state:
+
+- **Hub** and **Connection** track their own reservations per turn via a
+  `reservations: Dict[int, int]` dict. They expose `reserve(turn)`,
+  `usage(turn)`, `is_reserved(turn)`, and `is_available(turn)` methods.
+- **MoveStep** encapsulates one step in a drone's path — either at a zone
+  or on a link. Zone steps carry a `via` field recording which connection
+  was used, so reservation logic is self-contained per step.
+- **Drone** holds its identity, path, and reservation status.
+
+This eliminates the need for any central reservation table.
+
 ### PathFinder
 
-For each drone, paths are computed one after another. Each new path is reserved
-in a shared `ReservationTable` so later drones avoid conflicts.
+For each drone, paths are computed sequentially. Each path is reserved
+immediately so later drones avoid conflicts.
 
-**Reachability:** before searching, a reverse BFS from the goal marks every hub
-that can still reach the end. Search never expands into dead-end zones.
+**Reachability:** before searching, a reverse traversal from the goal marks
+every hub that can reach the end. Dead-end zones are never expanded.
 
-**Space-time search:** a min-heap explores states `(zone, turn)`. The cost is
-the number of turns spent. From each state the algorithm can:
+**Space-time search:** a min-heap explores `(zone, turn)` states. Cost is
+the number of turns. From each state the algorithm can:
 
-- Move to a neighbor (1 turn normally, 2 turns when the destination is restricted)
-- Wait one turn in the same zone (only if neighbors toward the goal exist)
+- Move to a neighbor (1 turn normally, 2 turns for restricted)
+- Wait one turn in the same zone
 
 **Priority zones:** neighbors are sorted so `priority` hubs are tried before
 `normal`, then `restricted`.
 
-**Multiple paths:** already-used zones and links receive a small congestion
-penalty. This pushes later drones toward alternative routes when several paths
-have similar cost.
-
-**Capacity checks:** before accepting a move, the algorithm verifies:
+**Capacity checks:** before accepting a move, the algorithm checks:
 
 - Destination zone capacity at the arrival turn
 - Link capacity while the drone is on the connection
 - Start and end zone exceptions from the subject
 
-**Waiting limit:** waiting is capped so the search cannot run forever when no
-path exists.
+**Waiting limit:** capped so the search cannot run forever when no path exists.
 
-**Reservation:** after a path is found, `_reserve` writes zone and link usage
-into the table. Restricted destination moves print a connection step first
-(`a-b`), then the destination zone on the next turn.
+**Reservation:** after a path is found, `_reserve` iterates each MoveStep.
+Each step is self-contained — zone steps use `step.via` for link
+reservation, link steps reserve the connection directly.
 
 ### Complexity
 
-- One drone search: roughly O(states × log(states)) with states bounded by
+- One drone search: O(states × log(states)) with states bounded by
   hubs × turns
-- All drones: multiplied by the number of drones D
-- Memory: reservation table grows with reserved `(zone/link, turn)` pairs
+- All drones: multiplied by D (number of drones)
+- Memory: reservation dicts grow with reserved (zone/link, turn) pairs
 
 ## Visual representation
 
 Moves are printed as `D<id>-<zone>` or `D<id>-<from>-<to>` during restricted
 transit. Colors come from the hub `color=` metadata using ANSI escape codes.
-The special value `rainbow` cycles colors per character.
 
 Drones that wait in place are omitted from that turn's line. Drones that reach
 the end zone are marked delivered and no longer tracked.
+
+The `--capacity-info` flag adds per-turn resource usage below each move line,
+showing how many drones occupy each zone and connection vs. their capacity.
 
 Example:
 
@@ -155,26 +174,30 @@ D2-goal
 
 Measured output line count (= total simulation turns):
 
-| Map                                | Drones | Turns | Subject target |
-| ---------------------------------- | ------ | ----- | -------------- |
-| easy/01_linear_path                | 2      | 4     | ≤ 6            |
-| easy/02_simple_fork                | 4      | 4     | ≤ 8            |
-| easy/03_basic_capacity             | 4      | 4     | ≤ 6            |
-| medium/01_dead_end_trap            | 5      | 8     | ≤ 12           |
-| medium/02_circular_loop            | 6      | 15    | ≤ 15           |
-| medium/03_priority_puzzle          | 5      | 7     | ≤ 12           |
-| hard/01_maze_nightmare             | 8      | 13    | ≤ 30           |
-| hard/02_capacity_hell              | 12     | 16    | ≤ 35           |
-| hard/03_ultimate_challenge         | 15     | 26    | ≤ 45           |
-| challenger/01_the_impossible_dream | 25     | 43    | ≤ 45 (record)  |
+| Map                                | Drones | Turns | Target |
+| ---------------------------------- | ------ | ----- | ------ |
+| easy/01_linear_path                | 2      | 4     | ≤ 6    |
+| easy/02_simple_fork                | 4      | 4     | ≤ 8    |
+| easy/03_basic_capacity             | 4      | 4     | ≤ 6    |
+| medium/01_dead_end_trap            | 5      | 8     | ≤ 12   |
+| medium/02_circular_loop            | 6      | 15    | ≤ 15   |
+| medium/03_priority_puzzle          | 5      | 7     | ≤ 12   |
+| hard/01_maze_nightmare             | 8      | 13    | ≤ 30   |
+| hard/02_capacity_hell              | 12     | 16    | ≤ 35   |
+| hard/03_ultimate_challenge         | 15     | 26    | ≤ 45   |
+| challenger/01_the_impossible_dream | 25     | 43    | ≤ 45   |
+
+All targets met or beaten, including the challenger map.
 
 ## Technical choices
 
-- **OOP:** each major task has its own class (see project structure)
+- **OOP:** each major entity has its own class with encapsulated state
 - **No graph libraries:** custom adjacency list in `GraphNetwork`
-- **Type hints + mypy:** all functions typed; `make lint` runs flake8 and mypy
-- **Errors:** parser prints line number and reason; routing raises if a drone
-  has no valid path
+- **Self-managed reservations:** Hub and Connection track their own usage
+  per turn — no central table
+- **Type hints + mypy:** all functions typed; `make lint` passes
+- **Errors:** parser prints line number and reason; routing raises if a
+  drone has no valid path
 
 ## Resources
 
@@ -183,12 +206,12 @@ Measured output line count (= total simulation turns):
 - [Python heapq](https://docs.python.org/3/library/heapq.html)
 - [flake8](https://flake8.pycqa.org/)
 - [mypy](http://mypy-lang.org/)
-- [webcolors](https://webcolors.readthedocs.io/)
 
 ## AI usage
 
-AI was used to help with documentation, debugging, and code review. All code
-was tested on the provided maps and checked with flake8/mypy before use.
+AI was used to assist with architecture design, debugging, and code review.
+All generated code was reviewed, tested on all provided maps, and verified
+with flake8/mypy before integration.
 
 ## License
 

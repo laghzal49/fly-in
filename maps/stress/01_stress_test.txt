@@ -1,0 +1,103 @@
+# Stress Test: 50 drones, complex topology with bottlenecks
+# Tests: high drone count, mixed zone types, capacity limits,
+# multiple paths, dead ends, restricted chains, tight bottlenecks
+nb_drones: 50
+
+start_hub: base 0 0 [color=green]
+
+# Layer 1: fan-out from start (3 paths)
+hub: north1 0 2 [color=blue]
+hub: mid1 2 0 [color=blue zone=priority]
+hub: south1 0 -2 [color=blue]
+
+# Layer 2: each path splits again
+hub: north2a 1 4 [color=cyan]
+hub: north2b -1 4 [color=cyan zone=restricted]
+hub: mid2a 4 1 [color=orange zone=priority max_drones=3]
+hub: mid2b 4 -1 [color=orange max_drones=2]
+hub: south2a 1 -4 [color=purple]
+hub: south2b -1 -4 [color=purple zone=restricted]
+
+# Dead ends (traps for bad algorithms)
+hub: trap1 -3 3 [color=red]
+hub: trap2 -3 -3 [color=red]
+hub: deadend 5 5 [color=gray zone=blocked]
+
+# Layer 3: convergence with bottlenecks
+hub: funnel_n 2 5 [color=yellow max_drones=2]
+hub: funnel_m 6 0 [color=yellow max_drones=2]
+hub: funnel_s 2 -5 [color=yellow max_drones=2]
+
+# Layer 4: restricted gauntlet
+hub: gauntlet1 4 5 [color=red zone=restricted]
+hub: gauntlet2 6 3 [color=red zone=restricted]
+hub: gauntlet3 6 -3 [color=red zone=restricted]
+hub: gauntlet4 4 -5 [color=red zone=restricted]
+
+# Layer 5: final merge with high-capacity corridor
+hub: corridor1 8 2 [color=lime max_drones=4]
+hub: corridor2 8 -2 [color=lime max_drones=4]
+hub: merge 10 0 [color=gold max_drones=3]
+
+# Layer 6: last stretch
+hub: final1 12 1 [color=magenta]
+hub: final2 12 -1 [color=magenta]
+
+end_hub: finish 14 0 [color=green]
+
+# === Connections ===
+
+# Layer 0 → 1: fan out
+connection: base-north1
+connection: base-mid1
+connection: base-south1
+
+# Layer 1 → 2: split
+connection: north1-north2a
+connection: north1-north2b
+connection: mid1-mid2a [max_link_capacity=2]
+connection: mid1-mid2b [max_link_capacity=2]
+connection: south1-south2a
+connection: south1-south2b
+
+# Dead end traps
+connection: north1-trap1
+connection: south1-trap2
+
+# Layer 2 → 3: converge into funnels
+connection: north2a-funnel_n
+connection: north2b-funnel_n
+connection: mid2a-funnel_m [max_link_capacity=2]
+connection: mid2b-funnel_m [max_link_capacity=2]
+connection: south2a-funnel_s
+connection: south2b-funnel_s
+
+# Cross connections (extra paths)
+connection: north2a-mid2a
+connection: south2a-mid2b
+
+# Layer 3 → 4: restricted gauntlet
+connection: funnel_n-gauntlet1
+connection: funnel_n-gauntlet2
+connection: funnel_m-gauntlet2 [max_link_capacity=2]
+connection: funnel_m-gauntlet3 [max_link_capacity=2]
+connection: funnel_s-gauntlet3
+connection: funnel_s-gauntlet4
+
+# Layer 4 → 5: into corridors
+connection: gauntlet1-corridor1
+connection: gauntlet2-corridor1
+connection: gauntlet3-corridor2
+connection: gauntlet4-corridor2
+
+# Layer 5: corridors merge
+connection: corridor1-merge [max_link_capacity=3]
+connection: corridor2-merge [max_link_capacity=3]
+
+# Layer 5 → 6: final stretch
+connection: merge-final1
+connection: merge-final2
+
+# Layer 6 → end
+connection: final1-finish
+connection: final2-finish
