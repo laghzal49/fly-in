@@ -1,0 +1,4 @@
+[flake8]
+# Tell the local repository environment to stop crying about E203 and E501
+ignore = E203, E501
+max-line-length = 79

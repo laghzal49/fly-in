@@ -1,13 +1,8 @@
-"""Pathfinding algorithm for drone routing."""
-from __future__ import annotations
-
 import heapq
-
 from drone import Drone, MoveStep
 from graph import GraphNetwork
 from parser import Hub
 
-# Lower value = higher priority in path search.
 ZONE_PRIO: dict[str, int] = {
     "priority": 0,
     "normal": 1,
@@ -20,11 +15,9 @@ class PathFinder:
 
     def __init__(self, graph: GraphNetwork) -> None:
         """Store graph reference."""
-        self.graph = graph
+        self.graph: GraphNetwork = graph
         self.can_reach: set[str] = set()
-        self._max_turn = 0
-
-    # ── reachability ───────────────────────────────
+        self._max_turn: int = 0
 
     def _mark_reachable(self, end: str) -> None:
         """Mark all hubs that can reach the end."""
@@ -49,8 +42,6 @@ class PathFinder:
             key=lambda h: ZONE_PRIO.get(h.zone, 1),
         )
 
-    # ── capacity checks ───────────────────────────
-
     def _zone_free(
         self, zone: str, turn: int,
         start: str, end: str,
@@ -67,6 +58,7 @@ class PathFinder:
         conn = self.graph.get_connection(src, dst)
         if conn is None:
             return True
+        # TODO SEE this shit after
         return conn.is_available(turn)
 
     def _can_move(
@@ -89,8 +81,6 @@ class PathFinder:
             dst, turn + 1, start, end,
         )
 
-    # ── step building ─────────────────────────────
-
     def _move_steps(
         self, src: str, dst: str, turn: int,
     ) -> list[MoveStep]:
@@ -106,8 +96,6 @@ class PathFinder:
             ),
         ]
 
-    # ── search ────────────────────────────────────
-
     def find_path(
         self, start: str, end: str,
     ) -> list[MoveStep]:
@@ -118,15 +106,11 @@ class PathFinder:
             return []
 
         limit = self._max_turn + len(self.graph.hubs) * 4
-
-        # Heap entries: (turn, cost, prio, zone, path)
         initial = MoveStep.at_zone(start, 0)
         start_prio = ZONE_PRIO.get(
             self.graph.hubs[start].zone, 1,
         )
-        heap: list[
-            tuple[int, int, int, str, list[MoveStep]]
-        ] = [(0, 0, start_prio, start, [initial])]
+        heap = [(0, 0, start_prio, start, [initial])]
         seen: set[tuple[str, int]] = set()
 
         while heap:
@@ -139,7 +123,6 @@ class PathFinder:
                 continue
             seen.add((zone, turn))
 
-            # Try moving to each neighbor
             for neighbor in self._neighbors(zone):
                 dst = neighbor.name
                 if not self._can_move(
@@ -159,8 +142,6 @@ class PathFinder:
                     arrival, cost + prio, prio,
                     dst, path + steps,
                 ))
-
-            # Try waiting one turn
             wait = turn + 1
             if wait <= limit and self._zone_free(
                 zone, wait, start, end,
@@ -169,15 +150,13 @@ class PathFinder:
                     self.graph.hubs[zone].zone, 1,
                 )
                 heapq.heappush(heap, (
-                    wait, cost + 1, prio, zone,
+                    wait, cost + prio, prio, zone,
                     path + [
                         MoveStep.at_zone(zone, wait),
                     ],
                 ))
 
         return []
-
-    # ── reservation ───────────────────────────────
 
     def _reserve(
         self, path: list[MoveStep],
@@ -209,8 +188,6 @@ class PathFinder:
             if last > self._max_turn:
                 self._max_turn = last
 
-    # ── public API ────────────────────────────────
-
     def assign_all_paths(
         self, start: str, end: str, nb_drones: int,
     ) -> list[Drone]:
@@ -227,7 +204,6 @@ class PathFinder:
                 )
             drone.path = path
             self._reserve(path)
-            drone.reserved = True
             drones.append(drone)
 
         return drones

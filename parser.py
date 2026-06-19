@@ -1,7 +1,7 @@
 """Read and validate map files."""
 
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 
 class Hub:
@@ -17,13 +17,13 @@ class Hub:
         color: str = "none",
     ) -> None:
         """Create a hub with position and optional metadata."""
-        self.name = name
-        self.x = x
-        self.y = y
-        self.zone = zone
-        self.max_drones = max_drones
-        self.color = color
-        self.reservations: Dict[int, int] = {}
+        self.name: str = name
+        self.x: int = x
+        self.y: int = y
+        self.zone: str = zone
+        self.max_drones: int = max_drones
+        self.color: str = color
+        self.reservations: dict[int, int] = {}
 
     def reserve(self, turn: int) -> None:
         """Reserve one drone slot at this hub for the given turn."""
@@ -52,10 +52,10 @@ class Connection:
         max_link_capacity: int = 1,
     ) -> None:
         """Create a connection with a default capacity of 1."""
-        self.from_hub = from_hub
-        self.to_hub = to_hub
-        self.max_link_capacity = max_link_capacity
-        self.reservations: Dict[int, int] = {}
+        self.from_hub: str = from_hub
+        self.to_hub: str = to_hub
+        self.max_link_capacity: int = max_link_capacity
+        self.reservations: dict[int, int] = {}
 
     def reserve(self, turn: int) -> None:
         """Reserve one drone slot on this link for the given turn."""
@@ -81,8 +81,8 @@ class MapData:
     nb_drones: int
     start_hub: Hub
     end_hub: Hub
-    hubs: Dict[str, Hub]
-    connections: List[Connection]
+    hubs: dict[str, Hub]
+    connections: list[Connection]
 
 
 class Parser:
@@ -92,14 +92,14 @@ class Parser:
 
     def __init__(self) -> None:
         """Prepare empty parser state."""
-        self.nb_drones = 0
-        self.start_hub: Optional[Hub] = None
-        self.end_hub: Optional[Hub] = None
-        self.hubs: Dict[str, Hub] = {}
-        self.connections: List[Connection] = []
+        self.nb_drones: int = 0
+        self.start_hub: Hub | None = None
+        self.end_hub: Hub | None = None
+        self.hubs: dict[str, Hub] = {}
+        self.connections: list[Connection] = []
         self.seen_connections: set[str] = set()
 
-    def open_file(self, file: str) -> List[str]:
+    def open_file(self, file: str) -> list[str]:
         """Read all lines from a map file."""
         with open(file, "r") as f:
             return f.readlines()
@@ -124,11 +124,11 @@ class Parser:
 
         self.nb_drones = nb
 
-    def _parse_metadata(self, attr: str, i: int) -> Dict[str, Any]:
+    def _parse_metadata(self, attr: str, i: int) -> dict[str, Any]:
         """Parse hub metadata inside [brackets]."""
-        zone: Optional[str] = None
-        color: Optional[str] = None
-        max_drones: Optional[int] = None
+        zone: str | None = None
+        color: str | None = None
+        max_drones: int | None = None
 
         if not attr:
             return {"zone": "normal", "color": "none", "max_drones": 1}

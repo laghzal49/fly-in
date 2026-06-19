@@ -1,12 +1,8 @@
-"""Drone and MoveStep classes for the drone routing system."""
-
 from __future__ import annotations
 
 
 class MoveStep:
     """One step in a drone's path."""
-
-    __slots__ = ("turn", "_zone", "_src", "_dst", "_via")
 
     def __init__(
         self,
@@ -17,11 +13,11 @@ class MoveStep:
         via: tuple[str, str] | None = None,
     ) -> None:
         """Create a move step (use the class methods instead)."""
-        self.turn = turn
-        self._zone = zone
-        self._src = src
-        self._dst = dst
-        self._via = via
+        self.turn: int = turn
+        self._zone: str | None = zone
+        self._src: str | None = src
+        self._dst: str | None = dst
+        self._via: tuple[str, str] | None = via
 
     @classmethod
     def at_zone(cls, zone: str, turn: int,
@@ -70,23 +66,11 @@ class MoveStep:
             return f"{self._src}-{self._dst}"
         return self._zone or ""
 
-    def __repr__(self) -> str:
-        """Show a helpful debug string."""
-        if self.is_link:
-            return f"MoveStep(link={self._src}->{self._dst}, t={self.turn})"
-        return f"MoveStep(zone={self._zone}, t={self.turn})"
-
     def __lt__(self, other: object) -> bool:
         """Compare by turn for heap ordering."""
         if not isinstance(other, MoveStep):
             return NotImplemented
         return self.turn < other.turn
-
-    def __eq__(self, other: object) -> bool:
-        """Check equality by label and turn."""
-        if not isinstance(other, MoveStep):
-            return NotImplemented
-        return self.turn == other.turn and self.label == other.label
 
 
 class Drone:
@@ -98,7 +82,6 @@ class Drone:
         self.origin: str = origin
         self.destination: str = destination
         self.path: list[MoveStep] = []
-        self.reserved: bool = False
 
     @property
     def name(self) -> str:
@@ -111,11 +94,3 @@ class Drone:
         if not self.path:
             return 0
         return self.path[-1].turn
-
-    def __repr__(self) -> str:
-        """Show a helpful debug string."""
-        status = "reserved" if self.reserved else "pending"
-        return (
-            f"Drone({self.name}, {self.origin} -> {self.destination}, "
-            f"{status}, steps={len(self.path)})"
-        )

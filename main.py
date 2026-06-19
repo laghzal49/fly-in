@@ -13,7 +13,7 @@ class FlyInApp:
 
     def __init__(self, map_file: str) -> None:
         """Store the map file path."""
-        self.map_file = map_file
+        self.map_file: str = map_file
 
     def run(self) -> None:
         """Parse input, build graph, route drones, print."""

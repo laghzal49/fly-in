@@ -1,6 +1,3 @@
-"""Graph built from hubs and connections."""
-from __future__ import annotations
-
 from parser import Connection, Hub
 
 
@@ -13,20 +10,18 @@ class GraphNetwork:
         connections: list[Connection],
     ) -> None:
         """Create a graph from parsed map data."""
-        self.hubs = hubs
+        self.hubs: dict[str, Hub] = hubs
         self.neighbors: dict[str, list[str]] = {}
         self.edges: dict[
             tuple[str, str], Connection
         ] = {}
-
         for hub in self.hubs.values():
             self.neighbors[hub.name] = []
-
         for conn in connections:
             src, dst = conn.from_hub, conn.to_hub
             self.neighbors[src].append(dst)
             self.neighbors[dst].append(src)
-            key = (min(src, dst), max(src, dst))
+            key: tuple[str, str] = (min(src, dst), max(src, dst))
             self.edges[key] = conn
 
     def get_neighbor(

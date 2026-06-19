@@ -1,6 +1,3 @@
-"""Print drone moves turn by turn."""
-from __future__ import annotations
-
 from drone import Drone, MoveStep
 from parser import Hub
 
@@ -37,9 +34,9 @@ class Simulation:
         hubs: dict[str, Hub],
     ) -> None:
         """Store drones, end zone, and hub metadata."""
-        self.drones = drones
-        self.end_zone = end_zone
-        self.hubs = hubs
+        self.drones: list[Drone] = drones
+        self.end_zone: str = end_zone
+        self.hubs: dict[str, Hub] = hubs
 
     def _last_turn(self) -> int:
         """Return the last turn used by any drone."""
@@ -85,17 +82,12 @@ class Simulation:
             for step in drone.path:
                 if step.turn != turn:
                     continue
-
-                # Skip if drone hasn't actually moved
                 if step.label == last_move.get(
                     drone.drone_id,
                 ):
                     break
-
                 last_move[drone.drone_id] = step.label
                 moves.append(self._format(drone, step))
-
-                # Mark delivered when reaching end
                 if (
                     not step.is_link
                     and step.zone == self.end_zone
