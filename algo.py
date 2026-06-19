@@ -56,9 +56,7 @@ class PathFinder:
     ) -> bool:
         """True if a link has room at a turn."""
         conn = self.graph.get_connection(src, dst)
-        if conn is None:
-            return True
-        # TODO SEE this shit after
+        assert conn is not None
         return conn.is_available(turn)
 
     def _can_move(

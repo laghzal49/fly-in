@@ -45,14 +45,17 @@ class FlyInApp:
 
 def main() -> None:
     """Check arguments and start the application."""
-    if len(sys.argv) != 2:
-        print(
-            "Usage: python3 main.py <map_file>",
-            file=sys.stderr,
-        )
-        sys.exit(1)
+    try:
+        if len(sys.argv) != 2:
+            print(
+                "Usage: python3 main.py <map_file>",
+                file=sys.stderr,
+            )
+            sys.exit(1)
 
-    FlyInApp(sys.argv[1]).run()
+        FlyInApp(sys.argv[1]).run()
+    except KeyboardInterrupt:
+        print("KeyboardInterrupt :)")
 
 
 if __name__ == "__main__":

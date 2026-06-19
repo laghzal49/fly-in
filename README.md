@@ -39,21 +39,6 @@ Or directly:
 .venv/bin/python main.py maps/easy/01_linear_path.txt
 ```
 
-### Capacity info mode
-
-```bash
-.venv/bin/python main.py --capacity-info maps/easy/01_linear_path.txt
-```
-
-Prints zone and connection usage per turn alongside the normal simulation
-output. Example:
-
-```
-D1-way2 D2-start-way1
-  Zone start: 1/1 drones
-  Connection start-way1: 1/1 capacity used
-```
-
 ### Debugging
 
 ```bash
@@ -158,9 +143,6 @@ transit. Colors come from the hub `color=` metadata using ANSI escape codes.
 Drones that wait in place are omitted from that turn's line. Drones that reach
 the end zone are marked delivered and no longer tracked.
 
-The `--capacity-info` flag adds per-turn resource usage below each move line,
-showing how many drones occupy each zone and connection vs. their capacity.
-
 Example:
 
 ```
@@ -170,6 +152,27 @@ D1-goal D2-waypoint2
 D2-goal
 ```
 
+
+### Input:
+  
+nb_drones: 4
+
+start_hub: start 0 0 [color=green max_drones=4]
+hub: bottleneck 1 0 [color=orange max_drones=2]
+hub: wide_area 2 0 [color=blue max_drones=3]
+end_hub: goal 3 0 [color=red max_drones=4]
+
+connection: start-bottleneck [max_link_capacity=4]
+connection: bottleneck-wide_area [max_link_capacity=4]
+connection: wide_area-goal [max_link_capacity=4]
+
+### Output
+  D1-bottleneck D2-bottleneck
+  D1-wide_area D2-wide_area D3-bottleneck D4-bottleneck
+  D1-goal D2-goal D3-wide_area D4-wide_area
+  D3-goal D4-goal
+
+  
 ## Performance benchmarks
 
 Measured output line count (= total simulation turns):
@@ -209,7 +212,7 @@ All targets met or beaten, including the challenger map.
 
 ## AI usage
 
-AI was used to assist with architecture design, debugging, and code review.
+AI was used to assist with debugging, and code review.
 All generated code was reviewed, tested on all provided maps, and verified
 with flake8/mypy before integration.
 

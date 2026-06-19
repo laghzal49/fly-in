@@ -106,8 +106,14 @@ class Parser:
 
     def parse_nb_drone(self, line: str, i: int) -> None:
         """Read the nb_drones value from one line."""
+        # handle nb drone li moraha
         try:
-            value = line.split(":")[1].strip()
+            t = line.split(":")
+            if len(t) != 2:
+                raise ValueError(
+                    f"Line {i}: Has duplicate ':'"
+                )
+            value = t[1].strip()
         except IndexError:
             raise ValueError(f"Line {i}: Missing ':' delimiter or value")
 
@@ -322,19 +328,6 @@ class Parser:
 
         return Connection(from_hub, to_hub, cap)
 
-    @staticmethod
-    def _strip_inline_comment(line: str) -> str:
-        """Remove an inline comment starting with '#'."""
-        in_bracket = False
-        for idx, ch in enumerate(line):
-            if ch == "[":
-                in_bracket = True
-            elif ch == "]":
-                in_bracket = False
-            elif ch == "#" and not in_bracket:
-                return line[:idx].rstrip()
-        return line
-
     def starter_parsing(self, file: str) -> MapData:
         """Read the whole map file and fill parser fields."""
         lines = self.open_file(file)
@@ -342,12 +335,11 @@ class Parser:
         got_drones = False
 
         for raw_line in lines:
-            line = raw_line.strip()
+            line = raw_line.strip().split("#", 1)[0]
             if not line or line.startswith("#"):
                 line_num += 1
                 continue
 
-            line = self._strip_inline_comment(line)
             if not line:
                 line_num += 1
                 continue

@@ -4,7 +4,6 @@ DEFAULT_MAP := maps/challenger/01_the_impossible_dream.txt
 MAP ?= $(if $(map),$(map),$(DEFAULT_MAP))
 PYTHON ?= .venv/bin/python
 PIP ?= .venv/bin/pip
-VENV_BIN := $(dir $(abspath $(PYTHON)))
 
 help:
 	@echo "Fly-in: Drone Routing System"
@@ -44,9 +43,9 @@ lint-deps:
 	$(PIP) install flake8 mypy
 
 lint: lint-deps
-	$(VENV_BIN)flake8 .
-	$(VENV_BIN)mypy . --warn-return-any --warn-unused-ignores --ignore-missing-imports --disallow-untyped-defs --check-untyped-defs
+	$(PYTHON) -m flake8 .
+	$(PYTHON) -m mypy . --warn-return-any --warn-unused-ignores --ignore-missing-imports --disallow-untyped-defs --check-untyped-defs
 
 lint-strict: lint-deps
-	$(VENV_BIN)flake8 .
-	$(VENV_BIN)mypy . --strict
+	$(PYTHON) -m flake8 .
+	$(PYTHON) -m mypy . --strict
