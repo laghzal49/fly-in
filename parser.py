@@ -106,13 +106,10 @@ class Parser:
 
     def parse_nb_drone(self, line: str, i: int) -> None:
         """Read the nb_drones value from one line."""
-        # handle nb drone li moraha
         try:
             t = line.split(":")
             if len(t) != 2:
-                raise ValueError(
-                    f"Line {i}: Has duplicate ':'"
-                )
+                raise ValueError(f"Line {i}: Invalid token")
             value = t[1].strip()
         except IndexError:
             raise ValueError(f"Line {i}: Missing ':' delimiter or value")
@@ -141,38 +138,28 @@ class Parser:
 
         for part in attr.split():
             if "=" not in part:
-                raise ValueError(
-                    f"Line {i}: Invalid metadata token '{part}'"
-                )
+                raise ValueError(f"Line {i}: Invalid metadata token '{part}'")
 
             key, val = part.split("=", 1)
             if key == "max_drones":
                 if max_drones is not None:
-                    raise ValueError(
-                        f"Line {i}: Duplicate max_drones"
-                    )
+                    raise ValueError(f"Line {i}: Duplicate max_drones")
                 try:
                     nb = int(val)
                     if nb <= 0:
                         raise ValueError()
                     max_drones = nb
                 except ValueError:
-                    raise ValueError(
-                        f"Line {i}: max_drones must be positive"
-                    )
+                    raise ValueError(f"Line {i}: max_drones must be positive")
             elif key == "zone":
                 if zone is not None:
                     raise ValueError(f"Line {i}: Duplicate zone parameter")
                 if val not in self.VALID_ZONES:
-                    raise ValueError(
-                        f"Line {i}: Invalid zone type '{val}'"
-                    )
+                    raise ValueError(f"Line {i}: Invalid zone type '{val}'")
                 zone = val
             elif key == "color":
                 if color is not None:
-                    raise ValueError(
-                        f"Line {i}: Duplicate color"
-                    )
+                    raise ValueError(f"Line {i}: Duplicate color")
 
                 if (
                     not val
@@ -180,15 +167,10 @@ class Parser:
                     or "=" in val
                     or len(val.split()) > 1
                 ):
-                    raise ValueError(
-                        f"Line {i}: Color must be a"
-                        f" single non-empty word"
-                    )
+                    raise ValueError(f"Line {i}: Color must be a single non-empty word")
                 color = val
             else:
-                raise ValueError(
-                    f"Line {i}: Unknown metadata key '{key}'"
-                )
+                raise ValueError(f"Line {i}: Unknown metadata key '{key}'")
 
         return {
             "zone": zone if zone is not None else "normal",
@@ -196,9 +178,7 @@ class Parser:
             "max_drones": max_drones if max_drones is not None else 1,
         }
 
-    def _extract_brackets(
-        self, data: str, i: int
-    ) -> tuple[str, str]:
+    def _extract_brackets(self, data: str, i: int) -> tuple[str, str]:
         """Split data into content before brackets and metadata."""
         open_b = data.find("[")
         close_b = data.find("]")
@@ -206,25 +186,17 @@ class Parser:
         if open_b == -1 and close_b == -1:
             return data, ""
         if open_b != -1 and close_b == -1:
-            raise ValueError(
-                f"Line {i}: Unclosed '[' in metadata"
-            )
+            raise ValueError(f"Line {i}: Unclosed '[' in metadata")
         if open_b == -1 and close_b != -1:
-            raise ValueError(
-                f"Line {i}: Unexpected ']' without opening '['"
-            )
+            raise ValueError(f"Line {i}: Unexpected ']' without opening '['")
         if close_b < open_b:
-            raise ValueError(
-                f"Line {i}: ']' appears before '['"
-            )
+            raise ValueError(f"Line {i}: ']' appears before '['")
 
-        attr = data[open_b + 1:close_b].strip()
+        attr = data[open_b + 1 : close_b].strip()
 
-        trailing = data[close_b + 1:].strip()
+        trailing = data[close_b + 1 :].strip()
         if trailing:
-            raise ValueError(
-                f"Line {i}: Unexpected text after ']'"
-            )
+            raise ValueError(f"Line {i}: Unexpected text after ']'")
 
         body = data[:open_b].strip()
         return body, attr
@@ -235,13 +207,9 @@ class Parser:
 
         parts = data.split()
         if len(parts) < 3:
-            raise ValueError(
-                f"Line {i}: Hub missing name, x, y parameters"
-            )
+            raise ValueError(f"Line {i}: Hub missing name, x, y parameters")
         if len(parts) > 3:
-            raise ValueError(
-                f"Line {i}: Unexpected tokens after x, y"
-            )
+            raise ValueError(f"Line {i}: Unexpected tokens after x, y")
 
         name = parts[0]
         if "-" in name or " " in name:
@@ -266,54 +234,40 @@ class Parser:
 
         parts = data.split("-")
         if len(parts) != 2:
-            raise ValueError(
-                f"Line {i}: Connection must be 'from-to'"
-            )
+            raise ValueError(f"Line {i}: Connection must be 'from-to'")
 
         from_hub = parts[0].strip()
         to_hub = parts[1].strip()
         if not from_hub or not to_hub:
-            raise ValueError(
-                f"Line {i}: Connection names cannot be empty"
-            )
+            raise ValueError(f"Line {i}: Connection names cannot be empty")
 
         if from_hub == to_hub:
-            raise ValueError(
-                f"Line {i}: Self-connection '{from_hub}-{to_hub}'"
-            )
+            raise ValueError(f"Line {i}: Self-connection '{from_hub}-{to_hub}'")
 
         if from_hub not in self.hubs:
-            raise ValueError(
-                f"Line {i}: Connection source '{from_hub}' undefined"
-            )
+            raise ValueError(f"Line {i}: Connection source '{from_hub}' undefined")
         if to_hub not in self.hubs:
-            raise ValueError(
-                f"Line {i}: Connection target '{to_hub}' undefined"
-            )
+            raise ValueError(f"Line {i}: Connection target '{to_hub}' undefined")
 
         key = "-".join(sorted([from_hub, to_hub]))
         if key in self.seen_connections:
-            raise ValueError(
-                f"Line {i}: Duplicate connection '{from_hub}-{to_hub}'"
-            )
+            raise ValueError(f"Line {i}: Duplicate connection '{from_hub}-{to_hub}'")
         self.seen_connections.add(key)
 
         if attr:
             for part in attr.split():
                 if "=" not in part:
-                    raise ValueError(
-                        f"Line {i}: Invalid metadata token '{part}'"
-                    )
+                    raise ValueError(f"Line {i}: Invalid metadata token '{part}'")
                 k, v = part.split("=", 1)
                 if k == "max_link_capacity":
                     if max_link_seen:
-                        raise ValueError(
-                            f"Line {i}: Duplicate"
-                            f" max_link_capacity"
-                        )
+                        raise ValueError(f"Line {i}: Duplicate max_link_capacity")
                     max_link_seen = True
                     try:
                         nb = int(v)
+                    except ValueError:
+                        raise ValueError(f"Line {i}: max_link_capacity must be integer")
+                    try:
                         if nb <= 0:
                             raise ValueError()
                         cap = nb
@@ -322,9 +276,7 @@ class Parser:
                             f"Line {i}: max_link_capacity must be positive"
                         )
                 else:
-                    raise ValueError(
-                        f"Line {i}: Unknown metadata key '{k}'"
-                    )
+                    raise ValueError(f"Line {i}: Unknown metadata key '{k}'")
 
         return Connection(from_hub, to_hub, cap)
 
@@ -346,16 +298,14 @@ class Parser:
 
             if not got_drones:
                 if not line.startswith("nb_drones:"):
-                    raise ValueError(
-                        f"Line {line_num}: Expected 'nb_drones:' first"
-                    )
+                    raise ValueError(f"Line {line_num}: Expected 'nb_drones:' first")
                 self.parse_nb_drone(line, line_num)
                 got_drones = True
                 line_num += 1
                 continue
 
             if ":" not in line:
-                raise ValueError(f"Line {line_num}: Expected \':\' separator")
+                raise ValueError(f"Line {line_num}: Expected ':' separator")
 
             prefix, data = line.split(":", 1)
             prefix = prefix.strip()
@@ -371,29 +321,19 @@ class Parser:
 
                 if prefix == "start_hub":
                     if self.start_hub is not None:
-                        raise ValueError(
-                            f"Line {line_num}: Duplicate start_hub"
-                        )
+                        raise ValueError(f"Line {line_num}: Duplicate start_hub")
                     self.start_hub = hub
                 elif prefix == "end_hub":
                     if self.end_hub is not None:
-                        raise ValueError(
-                            f"Line {line_num}: Duplicate end_hub"
-                        )
+                        raise ValueError(f"Line {line_num}: Duplicate end_hub")
                     self.end_hub = hub
 
             elif prefix == "connection":
-                self.connections.append(
-                    self.connection_parsing(data, line_num)
-                )
+                self.connections.append(self.connection_parsing(data, line_num))
             elif prefix == "nb_drones":
-                raise ValueError(
-                    f"Line {line_num}: Duplicate nb_drones definition"
-                )
+                raise ValueError(f"Line {line_num}: Duplicate nb_drones definition")
             else:
-                raise ValueError(
-                    f"Line {line_num}: Unknown prefix '{prefix}'"
-                )
+                raise ValueError(f"Line {line_num}: Unknown prefix '{prefix}'")
 
             line_num += 1
 

@@ -129,11 +129,12 @@ Each step is self-contained — zone steps use `step.via` for link
 reservation, link steps reserve the connection directly.
 
 ### Complexity
-
-- One drone search: O(states × log(states)) with states bounded by
-  hubs × turns
-- All drones: multiplied by D (number of drones)
-- Memory: reservation dicts grow with reserved (zone/link, turn) pairs
+**One Drone Search:** $O(H \cdot T \log(H \cdot T))$  
+  The pathfinder explores states bounded by $H$ (the total number of **hubs**) multiplied by $T$ (the maximum turn **limit** checked during the search). The $\log$ factor comes from sorting choices within the `heapq` priority queue.
+* **All Drones:** $O(D \cdot H \cdot T \log(H \cdot T))$  
+  Because `assign_all_paths` calculates routes sequentially, the total time is multiplied by $D$ (the number of **drones**). Each drone routes dynamically around the reservations of previous drones.
+* **Memory:** $O(H \cdot T + E \cdot T)$  
+  Memory scales based on the `seen` state tracking set and the graph's reservation dictionary pairs, which grow     dynamically with active `(zone, turn)` and `(link, turn)` allocations.
 
 ## Visual representation
 

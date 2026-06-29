@@ -2,13 +2,12 @@
 
 DEFAULT_MAP := maps/challenger/01_the_impossible_dream.txt
 MAP ?= $(if $(map),$(map),$(DEFAULT_MAP))
-PYTHON ?= .venv/bin/python
-PIP ?= .venv/bin/pip
+PYTHON ?= python3
 
 help:
 	@echo "Fly-in: Drone Routing System"
 	@echo "Available targets:"
-	@echo "  install        - Create venv and install dependencies"
+	@echo "  install        - install dependencies"
 	@echo "  run [map=FILE] - Run simulation"
 	@echo "  debug [map=FILE] - Run in debug mode with pdb"
 	@echo "  clean          - Remove temporary files and caches"
@@ -22,9 +21,7 @@ help:
 	@echo "  make debug map=maps/medium/01_dead_end_trap.txt"
 
 install:
-	python3 -m venv .venv
-	$(PIP) install --upgrade pip
-
+	pip install flake8 mypy
 
 run:
 	$(PYTHON) main.py $(MAP)
@@ -39,13 +36,11 @@ clean:
 	find . -type f -name "*.pyo" -delete
 	find . -type f -name "*~" -delete
 
-lint-deps:
-	$(PIP) install flake8 mypy
 
-lint: lint-deps
+lint:
 	$(PYTHON) -m flake8 .
 	$(PYTHON) -m mypy . --warn-return-any --warn-unused-ignores --ignore-missing-imports --disallow-untyped-defs --check-untyped-defs
 
-lint-strict: lint-deps
+lint-strict:
 	$(PYTHON) -m flake8 .
 	$(PYTHON) -m mypy . --strict
