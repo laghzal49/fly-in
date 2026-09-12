@@ -203,9 +203,11 @@ class Parser:
 
     def hub_parse(self, data: str, i: int) -> Hub:
         """Parse one hub line into a Hub object."""
-        data, attr = self._extract_brackets(data, i)
-
-        parts = data.split()
+        parts = data.split(maxsplit=2)
+        if len(parts) < 3:
+            raise ValueError(f"Line {i}: Hub missing name, x, y parameters")
+        tail, attr = self._extract_brackets(parts[2], i)
+        parts = parts[:2] + tail.split()
         if len(parts) < 3:
             raise ValueError(f"Line {i}: Hub missing name, x, y parameters")
         if len(parts) > 3:
@@ -228,18 +230,28 @@ class Parser:
 
     def connection_parsing(self, data: str, i: int) -> Connection:
         """Parse one connection line into a Connection object."""
-        data, attr = self._extract_brackets(data, i)
+        source, separator, target = data.partition("-")
+        from_hub = source.strip()
+        target = target.strip()
+        if not separator:
+            raise ValueError(f"Line {i}: Connection must be 'from-to'")
+        if not from_hub or not target:
+            raise ValueError(f"Line {i}: Connection names cannot be empty")
+
+        # Match declared names before interpreting a metadata suffix.
+        # Longest match keeps e.g. 'end[]' distinct from 'end'.
+        matches = [name for name in self.hubs if target.startswith(name)
+                   and (len(target) == len(name)
+                        or target[len(name)].isspace()
+                        or target[len(name)] == "[")]
+        if not matches:
+            raise ValueError(f"Line {i}: Connection target undefined")
+        to_hub = max(matches, key=len)
+        body, attr = self._extract_brackets(target[len(to_hub):].strip(), i)
+        if body:
+            raise ValueError(f"Line {i}: Unexpected connection suffix")
         cap = 1
         max_link_seen = False
-
-        parts = data.split("-")
-        if len(parts) != 2:
-            raise ValueError(f"Line {i}: Connection must be 'from-to'")
-
-        from_hub = parts[0].strip()
-        to_hub = parts[1].strip()
-        if not from_hub or not to_hub:
-            raise ValueError(f"Line {i}: Connection names cannot be empty")
 
         if from_hub == to_hub:
             raise ValueError(f"Line {i}: Self-connection '{from_hub}-{to_hub}'")

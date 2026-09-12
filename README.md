@@ -220,3 +220,16 @@ with flake8/mypy before integration.
 ## License
 
 This project is created for educational purposes as part of the 42 curriculum.
+
+### Brackets in names
+
+Hub names may contain literal `[` and `]`, including unmatched brackets.
+Hub metadata follows the coordinates; connection metadata follows the declared
+destination name. When names share a prefix, the longest matching declared
+name is used. Routing and movement output remain unchanged.
+
+Run the parser and routing regressions with:
+
+```sh
+python -m unittest discover -s tests
+```
